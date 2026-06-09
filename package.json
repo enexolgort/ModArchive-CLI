@@ -1,0 +1,33 @@
+{
+  "name": "modarchive-client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "client:build": "tsc --project tsconfig.client.json",
+    "client": "npm run client:build && node dist/client-runner.js",
+    "scrap": "ts-node src/scraper-runner.ts",
+    "scrap:artists": "ts-node src/scraper-runner.ts artists",
+    "scrap:modules": "ts-node src/scraper-runner.ts modules",
+    "purge": "node -e \"const db = require('better-sqlite3')('scraper.db'); db.exec('DELETE FROM module_genres; DELETE FROM modules; DELETE FROM genres; DELETE FROM artists;'); console.log('Database purged.');\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "chalk": "^4.1.2",
+    "cheerio": "^1.2.0",
+    "ink": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.2.17",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
