@@ -1,11 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "commonjs",
-    "jsx": "react",
-    "outDir": "dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist-client",
     "rootDir": "src",
     "skipLibCheck": true,
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": [
+    "src/client-runner.ts",
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+  ],
 }

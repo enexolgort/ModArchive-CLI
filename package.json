@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "client:build": "tsc --project tsconfig.client.json",
-    "client": "npm run client:build && node dist/client-runner.js",
+    "client": "npm run client:build && node dist-client/client-runner.js",
     "scrap": "ts-node src/scraper-runner.ts",
     "scrap:artists": "ts-node src/scraper-runner.ts artists",
     "scrap:modules": "ts-node src/scraper-runner.ts modules",
