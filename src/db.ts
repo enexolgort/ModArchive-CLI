@@ -32,6 +32,12 @@ db.exec(`
     FOREIGN KEY (module_id) REFERENCES modules(id),
     FOREIGN KEY (genre_id) REFERENCES genres(id)
   );
+
+  CREATE TABLE IF NOT EXISTS favorites (
+    module_id TEXT PRIMARY KEY,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (module_id) REFERENCES modules(id)
+  );
 `);
 
 // Migrate existing DB: add columns if they don't exist yet
@@ -85,4 +91,17 @@ export const countModulesForArtist = db.prepare(`
   SELECT COUNT(*) as count FROM modules WHERE artist_id = ?
 `);
 
+export const addFavorite = db.prepare(`
+  INSERT OR IGNORE INTO favorites (module_id) VALUES (?)
+`);
+
+export const removeFavorite = db.prepare(`
+  DELETE FROM favorites WHERE module_id = ?
+`);
+
+export const isFavoriteStmt = db.prepare(`
+  SELECT 1 FROM favorites WHERE module_id = ?
+`);
+
+export { db };
 export default db;
