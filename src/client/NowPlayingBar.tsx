@@ -69,11 +69,11 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
       </Text>
       {showVisualizer ? (
         <Box flexDirection="row" justifyContent="space-between">
-          <Box flexGrow={1}>
-            <VisualizerBars bars={state.visualizerBars} />
-          </Box>
-          <Box flexShrink={0} marginLeft={2}>
+          <Box flexShrink={0} marginRight={2}>
             {statusLine}
+          </Box>
+          <Box flexGrow={1} justifyContent="flex-end">
+            <VisualizerBars bars={state.visualizerBars} />
           </Box>
         </Box>
       ) : (
