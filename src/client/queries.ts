@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import {
   db,
   addFavorite,
@@ -10,6 +11,7 @@ import {
   removeFavoriteGenre,
   isFavoriteGenreStmt,
 } from "../db";
+import { getModulePaths } from "./paths";
 
 export interface Artist {
   id: string;
@@ -180,4 +182,31 @@ export function toggleFavoriteGenre(genreId: number): boolean {
   }
   addFavoriteGenre.run(genreId);
   return true;
+}
+
+const listAllModulesStmt = db.prepare(`
+  SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
+  FROM modules m
+  JOIN artists a ON a.id = m.artist_id
+`);
+
+export interface DownloadedModule {
+  module: ModuleRow;
+  bytes: number;
+}
+
+/** Every module that's already been downloaded and converted to mp3, with file size. */
+export function listDownloaded(): DownloadedModule[] {
+  const all = listAllModulesStmt.all() as ModuleRow[];
+  const result: DownloadedModule[] = [];
+  for (const module of all) {
+    const { audioPath } = getModulePaths(module);
+    try {
+      const bytes = fs.statSync(audioPath).size;
+      result.push({ module, bytes });
+    } catch {
+      // Not downloaded — skip.
+    }
+  }
+  return result;
 }

@@ -12,6 +12,7 @@ import {
   listAllModulesRandom,
   listFavoriteArtists,
   listFavoriteGenres,
+  listDownloaded,
   isFavorite,
   toggleFavorite,
   isFavoriteArtist,
@@ -29,6 +30,7 @@ import { getModulePaths } from "./paths";
 import { SelectableList } from "./SelectableList";
 import { NowPlayingBar } from "./NowPlayingBar";
 import { ProgressBar } from "./ProgressBar";
+import { formatBytes } from "./format";
 
 function isDownloaded(mod: ModuleRow): boolean {
   return fs.existsSync(getModulePaths(mod).audioPath);
@@ -41,7 +43,8 @@ type Section =
   | "favorite-genres"
   | "search"
   | "favorites"
-  | "all";
+  | "all"
+  | "downloaded";
 type Focus = "sidebar" | "content";
 
 const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
@@ -52,6 +55,7 @@ const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
   { key: "search", label: "Search" },
   { key: "favorites", label: "Favorite Mods" },
   { key: "all", label: "All Mods" },
+  { key: "downloaded", label: "Downloaded" },
 ];
 
 interface ArtistsState {
@@ -79,7 +83,8 @@ type ContentContext =
   | { kind: "genres-modules"; genreId: number; genreName: string }
   | { kind: "search" }
   | { kind: "favorites" }
-  | { kind: "all" };
+  | { kind: "all" }
+  | { kind: "downloaded" };
 
 function moduleLabel(m: ModuleRow): string {
   const name = m.module_name || m.file_name;
@@ -123,6 +128,7 @@ export function App() {
   const [allSelected, setAllSelected] = useState(0);
   const [favoriteArtistsSelected, setFavoriteArtistsSelected] = useState(0);
   const [favoriteGenresSelected, setFavoriteGenresSelected] = useState(0);
+  const [downloadedSelected, setDownloadedSelected] = useState(0);
 
   const [playState, setPlayState] = useState<PlaybackState>(pm.getState());
   const [favoritesVersion, setFavoritesVersion] = useState(0);
@@ -167,8 +173,18 @@ export function App() {
     }
     if (section === "search") return { kind: "search" };
     if (section === "favorites") return { kind: "favorites" };
+    if (section === "downloaded") return { kind: "downloaded" };
     return { kind: "all" };
   }, [section, artistsState.drill, genresState.drill]);
+
+  const downloadedList = useMemo(
+    () => (ctx.kind === "downloaded" ? listDownloaded() : []),
+    [ctx],
+  );
+  const downloadedTotalBytes = useMemo(
+    () => downloadedList.reduce((sum, d) => sum + d.bytes, 0),
+    [downloadedList],
+  );
 
   const items = useMemo((): (Artist | Genre | ModuleRow)[] => {
     const reorder = (list: ModuleRow[]) =>
@@ -192,6 +208,8 @@ export function App() {
         return reorder(listFavorites());
       case "all":
         return reorder(listAllModulesRandom());
+      case "downloaded":
+        return reorder(downloadedList.map((d) => d.module));
     }
   }, [
     ctx,
@@ -200,6 +218,7 @@ export function App() {
     favoritesVersion,
     playState.queue,
     playState.shuffled,
+    downloadedList,
   ]);
 
   function getSelected(): number {
@@ -222,6 +241,8 @@ export function App() {
         return favoriteArtistsSelected;
       case "favorite-genres-list":
         return favoriteGenresSelected;
+      case "downloaded":
+        return downloadedSelected;
     }
   }
 
@@ -253,6 +274,9 @@ export function App() {
         return;
       case "favorite-genres-list":
         setFavoriteGenresSelected(n);
+        return;
+      case "downloaded":
+        setDownloadedSelected(n);
         return;
     }
   }
@@ -325,6 +349,11 @@ export function App() {
         if (list[sel]) playList(list, sel);
         return;
       }
+      case "downloaded": {
+        const list = items as ModuleRow[];
+        if (list[sel]) playList(list, sel);
+        return;
+      }
     }
   }
 
@@ -334,7 +363,8 @@ export function App() {
       ctx.kind === "genres-modules" ||
       ctx.kind === "search" ||
       ctx.kind === "favorites" ||
-      ctx.kind === "all"
+      ctx.kind === "all" ||
+      ctx.kind === "downloaded"
     ) {
       const list = items as ModuleRow[];
       return list[getSelected()] ?? null;
@@ -543,6 +573,12 @@ export function App() {
         return <Text dimColor>Favorite Mods</Text>;
       case "all":
         return <Text dimColor>All Mods</Text>;
+      case "downloaded":
+        return (
+          <Text dimColor>
+            Downloaded ({downloadedList.length}, {formatBytes(downloadedTotalBytes)})
+          </Text>
+        );
     }
   }
 
@@ -648,7 +684,8 @@ export function App() {
             ctx.kind === "genres-modules" ||
             ctx.kind === "search" ||
             ctx.kind === "favorites" ||
-            ctx.kind === "all") && (
+            ctx.kind === "all" ||
+            ctx.kind === "downloaded") && (
             <SelectableList
               items={items as ModuleRow[]}
               selectedIndex={selectedIndex}
@@ -657,7 +694,9 @@ export function App() {
                   ? "Type to search…"
                   : ctx.kind === "favorites"
                     ? "No favorite mods yet. Press * on a module to add one."
-                    : "No modules found."
+                    : ctx.kind === "downloaded"
+                      ? "Nothing downloaded yet. Play or convert a module to cache it."
+                      : "No modules found."
               }
               renderItem={(mod, isSelected) => {
                 const downloaded = isDownloaded(mod);
@@ -678,7 +717,10 @@ export function App() {
                     {moduleLabel(mod)}
                     {(ctx.kind === "search" ||
                       ctx.kind === "favorites" ||
-                      ctx.kind === "all") && <Text dimColor> — {mod.artist_name}</Text>}
+                      ctx.kind === "all" ||
+                      ctx.kind === "downloaded") && (
+                      <Text dimColor> — {mod.artist_name}</Text>
+                    )}
                   </Text>
                 );
               }}
