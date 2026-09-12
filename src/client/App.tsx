@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import * as path from "path";
+import * as fs from "fs";
 import {
   listArtists,
   listModulesForArtist,
@@ -8,18 +9,26 @@ import {
   listModulesForGenre,
   searchModules,
   listFavorites,
+  listAllModulesRandom,
   isFavorite,
   toggleFavorite,
   type Artist,
   type Genre,
   type ModuleRow,
 } from "./queries";
-import { pm } from "./singleton";
+import { pm, batchConverter } from "./singleton";
 import type { PlaybackState } from "./playback-manager";
+import type { BatchState } from "./batch-converter";
+import { getModulePaths } from "./paths";
 import { SelectableList } from "./SelectableList";
 import { NowPlayingBar } from "./NowPlayingBar";
+import { ProgressBar } from "./ProgressBar";
 
-type Section = "artists" | "genres" | "search" | "favorites";
+function isDownloaded(mod: ModuleRow): boolean {
+  return fs.existsSync(getModulePaths(mod).audioPath);
+}
+
+type Section = "artists" | "genres" | "search" | "favorites" | "all";
 type Focus = "sidebar" | "content";
 
 const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
@@ -27,6 +36,7 @@ const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
   { key: "genres", label: "Genres" },
   { key: "search", label: "Search" },
   { key: "favorites", label: "Favorites" },
+  { key: "all", label: "All Mods" },
 ];
 
 interface ArtistsState {
@@ -51,12 +61,25 @@ type ContentContext =
   | { kind: "genres-list" }
   | { kind: "genres-modules"; genreId: number; genreName: string }
   | { kind: "search" }
-  | { kind: "favorites" };
+  | { kind: "favorites" }
+  | { kind: "all" };
 
 function moduleLabel(m: ModuleRow): string {
   const name = m.module_name || m.file_name;
   const ext = path.extname(m.file_name);
   return `${name}${ext ? `  ${ext}` : ""}`;
+}
+
+/**
+ * When the currently browsed list is the same set of modules as the shuffled
+ * playback queue, show it in queue order instead of the canonical DB order —
+ * so shuffling visibly reorders what's on screen, not just future playback.
+ */
+function reorderByQueue(list: ModuleRow[], queue: ModuleRow[], shuffled: boolean): ModuleRow[] {
+  if (!shuffled || list.length === 0 || queue.length !== list.length) return list;
+  const listIds = new Set(list.map((m) => m.id));
+  if (!queue.every((m) => listIds.has(m.id))) return list;
+  return queue;
 }
 
 export function App() {
@@ -80,15 +103,25 @@ export function App() {
     selected: 0,
   });
   const [favoritesSelected, setFavoritesSelected] = useState(0);
+  const [allSelected, setAllSelected] = useState(0);
 
   const [playState, setPlayState] = useState<PlaybackState>(pm.getState());
   const [favoritesVersion, setFavoritesVersion] = useState(0);
+  const [batchState, setBatchState] = useState<BatchState>(batchConverter.getState());
 
   useEffect(() => {
     const handler = (s: PlaybackState) => setPlayState(s);
     pm.on("change", handler);
     return () => {
       pm.off("change", handler);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (s: BatchState) => setBatchState(s);
+    batchConverter.on("change", handler);
+    return () => {
+      batchConverter.off("change", handler);
     };
   }, []);
 
@@ -112,25 +145,37 @@ export function App() {
         : { kind: "genres-list" };
     }
     if (section === "search") return { kind: "search" };
-    return { kind: "favorites" };
+    if (section === "favorites") return { kind: "favorites" };
+    return { kind: "all" };
   }, [section, artistsState.drill, genresState.drill]);
 
   const items = useMemo((): (Artist | Genre | ModuleRow)[] => {
+    const reorder = (list: ModuleRow[]) =>
+      reorderByQueue(list, playState.queue, playState.shuffled);
     switch (ctx.kind) {
       case "artists-list":
         return listArtists(artistsState.query);
       case "artists-modules":
-        return listModulesForArtist(ctx.artistId);
+        return reorder(listModulesForArtist(ctx.artistId));
       case "genres-list":
         return listGenres();
       case "genres-modules":
-        return listModulesForGenre(ctx.genreId);
+        return reorder(listModulesForGenre(ctx.genreId));
       case "search":
-        return searchState.query.trim() ? searchModules(searchState.query) : [];
+        return reorder(searchState.query.trim() ? searchModules(searchState.query) : []);
       case "favorites":
-        return listFavorites();
+        return reorder(listFavorites());
+      case "all":
+        return reorder(listAllModulesRandom());
     }
-  }, [ctx, artistsState.query, searchState.query, favoritesVersion]);
+  }, [
+    ctx,
+    artistsState.query,
+    searchState.query,
+    favoritesVersion,
+    playState.queue,
+    playState.shuffled,
+  ]);
 
   function getSelected(): number {
     switch (ctx.kind) {
@@ -146,6 +191,8 @@ export function App() {
         return searchState.selected;
       case "favorites":
         return favoritesSelected;
+      case "all":
+        return allSelected;
     }
   }
 
@@ -168,6 +215,9 @@ export function App() {
         return;
       case "favorites":
         setFavoritesSelected(n);
+        return;
+      case "all":
+        setAllSelected(n);
         return;
     }
   }
@@ -233,6 +283,11 @@ export function App() {
         if (list[sel]) playList(list, sel);
         return;
       }
+      case "all": {
+        const list = items as ModuleRow[];
+        if (list[sel]) playList(list, sel);
+        return;
+      }
     }
   }
 
@@ -241,7 +296,8 @@ export function App() {
       ctx.kind === "artists-modules" ||
       ctx.kind === "genres-modules" ||
       ctx.kind === "search" ||
-      ctx.kind === "favorites"
+      ctx.kind === "favorites" ||
+      ctx.kind === "all"
     ) {
       const list = items as ModuleRow[];
       return list[getSelected()] ?? null;
@@ -272,10 +328,10 @@ export function App() {
     // hosts (VS Code's integrated terminal in particular) intercept
     // Ctrl+N/Ctrl+B/Ctrl+F/Ctrl+R as their own global shortcuts (new file,
     // toggle sidebar, find, reload) before the keystroke ever reaches this
-    // app's stdin, so those bindings silently never fire. n/b are gated on
+    // app's stdin, so those bindings silently never fire. n/b/r are gated on
     // !isTextCtx (like space and q below) so they still type normally into
-    // search boxes. The old Ctrl+ bindings are kept as a bonus fallback for
-    // terminals that don't swallow them.
+    // search boxes. A couple of the old Ctrl+ bindings are kept below as a
+    // bonus fallback for terminals that don't swallow them.
     if (input === "n" && !(focus === "content" && isTextCtx)) {
       void pm.next();
       return;
@@ -285,15 +341,24 @@ export function App() {
       return;
     }
     if (input === "*") {
-      const mod = getSelectedModule() ?? playState.module;
+      const mod = playState.module ?? getSelectedModule();
       if (mod) {
         toggleFavorite(mod.id);
         setFavoritesVersion((v) => v + 1);
       }
       return;
     }
-    if (input === "~") {
+    if (input === "r" && !(focus === "content" && isTextCtx)) {
       pm.shuffle();
+      return;
+    }
+    if (input === "c" && (ctx.kind === "artists-modules" || ctx.kind === "genres-modules")) {
+      if (batchState.active) {
+        batchConverter.cancel();
+      } else {
+        const label = ctx.kind === "artists-modules" ? ctx.artistName : ctx.genreName;
+        void batchConverter.run(label, items as ModuleRow[]);
+      }
       return;
     }
     if (input === "\\") {
@@ -317,12 +382,8 @@ export function App() {
       void pm.previous();
       return;
     }
-    if (key.ctrl && input === "r") {
-      pm.shuffle();
-      return;
-    }
     if (key.ctrl && input === "f") {
-      const mod = getSelectedModule() ?? playState.module;
+      const mod = playState.module ?? getSelectedModule();
       if (mod) {
         toggleFavorite(mod.id);
         setFavoritesVersion((v) => v + 1);
@@ -400,20 +461,36 @@ export function App() {
     }
   });
 
-  function contentTitle(): string {
+  function contentTitle(): React.ReactNode {
     switch (ctx.kind) {
       case "artists-list":
-        return "Artists";
+        return <Text dimColor>Artists</Text>;
       case "artists-modules":
-        return `Artists › ${ctx.artistName}`;
+        return (
+          <Text>
+            <Text dimColor>Artists › </Text>
+            <Text bold color="cyan">
+              {ctx.artistName}
+            </Text>
+          </Text>
+        );
       case "genres-list":
-        return "Genres";
+        return <Text dimColor>Genres</Text>;
       case "genres-modules":
-        return `Genres › ${ctx.genreName}`;
+        return (
+          <Text>
+            <Text dimColor>Genres › </Text>
+            <Text bold color="cyan">
+              {ctx.genreName}
+            </Text>
+          </Text>
+        );
       case "search":
-        return "Search";
+        return <Text dimColor>Search</Text>;
       case "favorites":
-        return "Favorites";
+        return <Text dimColor>Favorites</Text>;
+      case "all":
+        return <Text dimColor>All Mods</Text>;
     }
   }
 
@@ -423,13 +500,27 @@ export function App() {
 
   const selectedIndex = getSelected();
 
+  const drilledName =
+    ctx.kind === "artists-modules"
+      ? ctx.artistName
+      : ctx.kind === "genres-modules"
+        ? ctx.genreName
+        : null;
+
   return (
     <Box flexDirection="column">
       <Box justifyContent="space-between">
-        <Text bold color="cyan">
-          ♫ ModArchive Player
-        </Text>
-        <Text dimColor>{contentTitle()}</Text>
+        <Box flexDirection="column">
+          <Text bold color="cyan">
+            ♫ ModArchive Player
+          </Text>
+          {drilledName && (
+            <Text bold color="cyan">
+              {drilledName}
+            </Text>
+          )}
+        </Box>
+        {contentTitle()}
       </Box>
 
       <Box marginTop={1} flexDirection="row">
@@ -499,7 +590,8 @@ export function App() {
           {(ctx.kind === "artists-modules" ||
             ctx.kind === "genres-modules" ||
             ctx.kind === "search" ||
-            ctx.kind === "favorites") && (
+            ctx.kind === "favorites" ||
+            ctx.kind === "all") && (
             <SelectableList
               items={items as ModuleRow[]}
               selectedIndex={selectedIndex}
@@ -510,20 +602,29 @@ export function App() {
                     ? "No favorites yet. Press * on a module to add one."
                     : "No modules found."
               }
-              renderItem={(mod, isSelected) => (
-                <Text
-                  color={focus === "content" && isSelected ? "cyan" : undefined}
-                  bold={focus === "content" && isSelected}
-                >
-                  {focus === "content" && isSelected ? "❯ " : "  "}
-                  {isPlaying(mod.id) ? "♪ " : "  "}
-                  {isFavorite(mod.id) ? <Text color="yellow">★ </Text> : "  "}
-                  {moduleLabel(mod)}
-                  {(ctx.kind === "search" || ctx.kind === "favorites") && (
-                    <Text dimColor> — {mod.artist_name}</Text>
-                  )}
-                </Text>
-              )}
+              renderItem={(mod, isSelected) => {
+                const downloaded = isDownloaded(mod);
+                return (
+                  <Text
+                    color={
+                      focus === "content" && isSelected
+                        ? "cyan"
+                        : !downloaded
+                          ? "yellow"
+                          : undefined
+                    }
+                    bold={focus === "content" && isSelected}
+                  >
+                    {focus === "content" && isSelected ? "❯ " : "  "}
+                    {isPlaying(mod.id) ? "♪ " : "  "}
+                    {isFavorite(mod.id) ? <Text color="yellow">★ </Text> : "  "}
+                    {moduleLabel(mod)}
+                    {(ctx.kind === "search" ||
+                      ctx.kind === "favorites" ||
+                      ctx.kind === "all") && <Text dimColor> — {mod.artist_name}</Text>}
+                  </Text>
+                );
+              }}
             />
           )}
 
@@ -539,6 +640,10 @@ export function App() {
                 >
                   {focus === "content" && isSelected ? "❯ " : "  "}
                   {genre.name}
+                  <Text dimColor>
+                    {"  "}
+                    {genre.module_count} modules
+                  </Text>
                 </Text>
               )}
             />
@@ -547,10 +652,29 @@ export function App() {
       </Box>
 
       <Box marginTop={1} flexDirection="column">
+        {batchState.active && (
+          <Box borderStyle="round" borderColor="yellow" paddingX={1} flexDirection="column">
+            <Text color="yellow" bold>
+              ⇩ Converting {batchState.label}
+              {batchState.current ? ` — ${moduleLabel(batchState.current)}` : ""}
+            </Text>
+            <Text>
+              <ProgressBar ratio={batchState.total ? batchState.done / batchState.total : 0} />
+              <Text color="yellow">
+                {" "}
+                {batchState.done}/{batchState.total} (c to cancel)
+              </Text>
+            </Text>
+          </Box>
+        )}
         <NowPlayingBar state={playState} />
         <Text dimColor>
           ←→ pane · ↑↓ move · enter select/play · esc back · space pause · b/n
-          prev/next · * favorite · ~ shuffle · \ stop · ^q quit
+          prev/next · * favorite ·{" "}
+          <Text color={playState.shuffled ? "red" : undefined} dimColor={!playState.shuffled}>
+            r shuffle
+          </Text>{" "}
+          · \ stop · c convert artist/genre · ^q quit
         </Text>
       </Box>
     </Box>

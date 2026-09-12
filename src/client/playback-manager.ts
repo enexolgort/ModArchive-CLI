@@ -23,6 +23,8 @@ export interface PlaybackState {
   elapsed: number;
   duration: number | null;
   error?: string;
+  queue: ModuleRow[];
+  shuffled: boolean;
 }
 
 const initialState: PlaybackState = {
@@ -33,6 +35,8 @@ const initialState: PlaybackState = {
   convertDuration: null,
   elapsed: 0,
   duration: null,
+  queue: [],
+  shuffled: false,
 };
 
 export class PlaybackManager extends EventEmitter {
@@ -40,6 +44,7 @@ export class PlaybackManager extends EventEmitter {
   private state: PlaybackState = { ...initialState };
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
   private queue: ModuleRow[] = [];
+  private originalQueue: ModuleRow[] = [];
   private queueIndex = -1;
   private playToken = 0;
   private abortController: AbortController | null = null;
@@ -132,7 +137,9 @@ export class PlaybackManager extends EventEmitter {
 
   setQueue(list: ModuleRow[], startIndex: number) {
     this.queue = list;
+    this.originalQueue = list;
     this.queueIndex = startIndex;
+    this.setState({ queue: list, shuffled: false });
   }
 
   async playIndex(index: number) {
@@ -156,10 +163,25 @@ export class PlaybackManager extends EventEmitter {
     }
   }
 
-  /** Shuffles the upcoming queue, keeping the currently playing track anchored in place. */
+  /**
+   * Toggles shuffle. Turning it on shuffles the upcoming queue, keeping the
+   * currently playing track anchored in place. Turning it off restores the
+   * original (pre-shuffle) order, re-anchored on wherever playback currently
+   * is in that order.
+   */
   shuffle() {
     if (this.queue.length < 2) return;
     const current = this.queueIndex >= 0 ? this.queue[this.queueIndex] : undefined;
+
+    if (this.state.shuffled) {
+      this.queue = [...this.originalQueue];
+      this.queueIndex = current
+        ? this.queue.findIndex((m) => m.id === current.id)
+        : this.queueIndex;
+      this.setState({ queue: this.queue, shuffled: false });
+      return;
+    }
+
     const rest = this.queue.filter((_, i) => i !== this.queueIndex);
     for (let i = rest.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -167,6 +189,7 @@ export class PlaybackManager extends EventEmitter {
     }
     this.queue = current ? [current, ...rest] : rest;
     this.queueIndex = current ? 0 : this.queueIndex;
+    this.setState({ queue: this.queue, shuffled: true });
   }
 
   async playModule(mod: ModuleRow) {
@@ -182,6 +205,8 @@ export class PlaybackManager extends EventEmitter {
     const { dir, rawPath, audioPath } = getModulePaths(mod);
     this.setState({
       ...initialState,
+      queue: this.state.queue,
+      shuffled: this.state.shuffled,
       module: mod,
       phase: "downloading",
     });
@@ -220,6 +245,7 @@ export class PlaybackManager extends EventEmitter {
           },
           controller.signal,
         );
+        fs.rm(rawPath, { force: true }, () => {});
       }
       if (token !== this.playToken) return;
 

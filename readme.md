@@ -1,6 +1,6 @@
-# ModArchive Scraper
+# ModArchive CLI
 
-A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) catalog into a local SQLite database — artists, modules, genres, ratings, and more.
+A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) catalog into a local SQLite database — artists, modules, genres, ratings, and more — plus a terminal UI (built with [Ink](https://github.com/vadimdemedes/ink)) for browsing that catalog and playing modules, Spotify-style, right from the terminal.
 
 ---
 
@@ -8,6 +8,7 @@ A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) c
 
 - Node.js 18+
 - npm
+- [ffmpeg](https://ffmpeg.org/) on `PATH` (needs `libopenmpt` support for tracker formats — most distro packages include it) — used to convert downloaded modules to MP3 and, outside WSL, to play them back
 - A working internet connection
 
 ---
@@ -48,7 +49,70 @@ genres
 module_genres        (N-to-N join table)
 ├── module_id      TEXT  → modules.id
 └── genre_id       INTEGER → genres.id
+
+favorites            (modules starred in the client)
+├── module_id      TEXT  → modules.id
+└── added_at       TEXT  (timestamp)
 ```
+
+---
+
+## Client (TUI Player)
+
+A terminal player for browsing and listening to the modules indexed above. Run it after at least `npm run scrap:artists` + `npm run scrap:modules` have populated `scraper.db`.
+
+```bash
+npm run client
+```
+
+### Sections
+
+- **Artists** — browse/search all indexed artists, drill into an artist to see their modules
+- **Genres** — browse genres (with module counts), drill into a genre to see its modules
+- **Search** — full-text search across module and file names
+- **Favorites** — modules you've starred
+- **All Mods** — every module in the catalog, in a fresh random order each time you open the page
+
+### How playback works
+
+Pressing Enter on a module:
+
+1. Downloads the original file from ModArchive if it isn't already cached
+2. Converts it to MP3 via `ffmpeg` (tracker formats — `.mod`/`.xm`/`.it`/`.s3m`/etc. — are decoded through ffmpeg's `libopenmpt` support)
+3. Deletes the original download, keeping only the MP3
+4. Plays it and auto-advances to the next module in the current list when it ends
+
+Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`. In any module list, entries that haven't been downloaded/converted yet are shown in yellow.
+
+### Batch converting a whole artist or genre
+
+While browsing a specific artist's or genre's module list, press `c` to download and convert every module in that list up front (skipping ones already cached, continuing past individual failures). A progress bar tracks it; press `c` again to cancel.
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `←` `→` | Switch focus between sidebar and content pane |
+| `↑` `↓` | Move selection |
+| `Enter` | Open (artist/genre) or play (module) |
+| `Esc` | Back out of an artist/genre's module list |
+| `Space` | Pause / resume |
+| `b` / `n` | Previous / next track |
+| `*` | Toggle favorite on the selected/playing module |
+| `r` | Toggle shuffle (press again to restore original order) |
+| `\` | Stop |
+| `c` | Convert a whole artist/genre's modules (see above) |
+| `q` | Quit |
+
+Letter shortcuts (`b`, `n`, `r`, `q`) are disabled while typing in a search/filter box so they type normally instead — use `Ctrl+Q` (or `Ctrl+C`) to quit from there.
+
+### Audio backend
+
+Playback always goes through `ffmpeg`, but *how* differs by environment:
+
+- **WSL**: audio is played by a native Windows process (`src/client/win-player.ps1`, driven via `powershell.exe` over the WSL/Windows interop bridge), so it goes through Windows' own audio stack instead of WSLg's PulseAudio bridge — the latter was found to progressively lose throughput on long streams and eventually drop the connection, regardless of audio format.
+- **Linux with PulseAudio** (`$PULSE_SERVER` set, non-WSL): plays via `ffmpeg -f pulse`.
+- **Everything else**: plays via `ffplay`.
 
 ---
 

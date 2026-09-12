@@ -2,17 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { PlaybackState } from "./playback-manager";
 import { formatTime } from "./format";
-
-function ProgressBar({ ratio, width = 30 }: { ratio: number; width?: number }) {
-  const clamped = Math.max(0, Math.min(1, ratio));
-  const filled = Math.round(clamped * width);
-  return (
-    <Text>
-      <Text color="green">{"█".repeat(filled)}</Text>
-      <Text dimColor>{"░".repeat(width - filled)}</Text>
-    </Text>
-  );
-}
+import { ProgressBar } from "./ProgressBar";
 
 export function NowPlayingBar({ state }: { state: PlaybackState }) {
   const { phase, module } = state;
@@ -41,7 +31,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
     const ratio = state.convertDuration ? state.convertElapsed / state.convertDuration : 0;
     statusLine = (
       <Text>
-        <Text color="cyan">🔄 Converting to FLAC </Text>
+        <Text color="cyan">🔄 Converting to MP3 </Text>
         <ProgressBar ratio={ratio} />
         <Text>
           {" "}
@@ -70,7 +60,10 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
 
   return (
     <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
-      <Text bold>{label}</Text>
+      <Text>
+        <Text bold>{label}</Text>
+        {state.shuffled && <Text color="magenta">  🔀 Shuffle</Text>}
+      </Text>
       <Box>{statusLine}</Box>
     </Box>
   );

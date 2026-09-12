@@ -11,6 +11,7 @@ export interface Artist {
 export interface Genre {
   id: number;
   name: string;
+  module_count: number;
 }
 
 export interface ModuleRow {
@@ -60,10 +61,24 @@ export function searchModules(query: string, limit = 300): ModuleRow[] {
   return searchModulesStmt.all(pattern, pattern, limit) as ModuleRow[];
 }
 
+const listAllModulesRandomStmt = db.prepare(`
+  SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
+  FROM modules m
+  JOIN artists a ON a.id = m.artist_id
+  ORDER BY RANDOM()
+  LIMIT ?
+`);
+
+/** Every module across the whole catalog, in a fresh random order each call. */
+export function listAllModulesRandom(limit = 500): ModuleRow[] {
+  return listAllModulesRandomStmt.all(limit) as ModuleRow[];
+}
+
 const listGenresStmt = db.prepare(`
-  SELECT g.id, g.name
+  SELECT g.id, g.name, COUNT(mg.module_id) as module_count
   FROM genres g
-  WHERE EXISTS (SELECT 1 FROM module_genres mg WHERE mg.genre_id = g.id)
+  JOIN module_genres mg ON mg.genre_id = g.id
+  GROUP BY g.id
   ORDER BY g.name COLLATE NOCASE
 `);
 
