@@ -26,7 +26,18 @@ export function getModulePaths(mod: ModuleRow): ModulePaths {
   return {
     dir,
     rawPath: path.join(dir, `${baseName}${ext}`),
-    // Testing whether mp3 avoids the WSLg/PulseAudio drop-outs seen with flac.
     audioPath: path.join(dir, `${baseName}.mp3`),
   };
+}
+
+/**
+ * Converts an absolute WSL path to the `\\wsl.localhost\<Distro>\...` UNC form
+ * a native Windows process can open directly over the WSL interop bridge.
+ */
+export function toWindowsPath(linuxPath: string): string {
+  const distro = process.env.WSL_DISTRO_NAME;
+  if (!distro) {
+    throw new Error("WSL_DISTRO_NAME is not set; cannot resolve a Windows path for this WSL distro");
+  }
+  return `\\\\wsl.localhost\\${distro}${linuxPath.replace(/\//g, "\\")}`;
 }
