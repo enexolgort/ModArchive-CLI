@@ -30,7 +30,7 @@ import { getModulePaths } from "./paths";
 import { SelectableList } from "./SelectableList";
 import { NowPlayingBar } from "./NowPlayingBar";
 import { ProgressBar } from "./ProgressBar";
-import { formatBytes } from "./format";
+import { formatBytes, formatGB } from "./format";
 
 function isDownloaded(mod: ModuleRow): boolean {
   return fs.existsSync(getModulePaths(mod).audioPath);
@@ -149,6 +149,28 @@ export function App() {
       batchConverter.off("change", handler);
     };
   }, []);
+
+  // Total size of everything already downloaded, shown next to the app
+  // title. listDownloaded() does a full-catalog scan (~500ms), so it's
+  // refreshed periodically rather than on every render — plus immediately
+  // whenever a batch conversion finishes, for quicker feedback after a bulk
+  // download.
+  const [totalDownloadedBytes, setTotalDownloadedBytes] = useState(0);
+
+  useEffect(() => {
+    function refresh() {
+      setTotalDownloadedBytes(listDownloaded().reduce((sum, d) => sum + d.bytes, 0));
+    }
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!batchState.active) {
+      setTotalDownloadedBytes(listDownloaded().reduce((sum, d) => sum + d.bytes, 0));
+    }
+  }, [batchState.active]);
 
   const ctx: ContentContext = useMemo(() => {
     if (section === "artists" || section === "favorite-artists") {
@@ -599,8 +621,11 @@ export function App() {
     <Box flexDirection="column">
       <Box justifyContent="space-between">
         <Box flexDirection="column">
-          <Text bold color="cyan">
-            ♫ ModArchive Player
+          <Text>
+            <Text bold color="cyan">
+              ♫ ModArchive Player
+            </Text>
+            <Text dimColor>  ({formatGB(totalDownloadedBytes)} downloaded)</Text>
           </Text>
           {drilledName && (
             <Text bold color="cyan">

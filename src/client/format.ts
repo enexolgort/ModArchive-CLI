@@ -17,3 +17,7 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
+
+export function formatGB(bytes: number): string {
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
