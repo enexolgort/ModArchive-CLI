@@ -67,8 +67,18 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
         <Text bold>{label}</Text>
         {state.shuffled && <Text color="magenta">  🔀 Shuffle</Text>}
       </Text>
-      <Box>{statusLine}</Box>
-      {showVisualizer && <VisualizerBars bars={state.visualizerBars} />}
+      {showVisualizer ? (
+        <Box flexDirection="row" justifyContent="space-between">
+          <Box flexGrow={1}>
+            <VisualizerBars bars={state.visualizerBars} />
+          </Box>
+          <Box flexShrink={0} marginLeft={2}>
+            {statusLine}
+          </Box>
+        </Box>
+      ) : (
+        <Box>{statusLine}</Box>
+      )}
     </Box>
   );
 }
