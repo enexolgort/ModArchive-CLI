@@ -28,11 +28,10 @@ const listArtistsStmt = db.prepare(`
   FROM artists
   WHERE name LIKE ?
   ORDER BY name COLLATE NOCASE
-  LIMIT ?
 `);
 
-export function listArtists(search = "", limit = 500): Artist[] {
-  return listArtistsStmt.all(`%${search}%`, limit) as Artist[];
+export function listArtists(search = ""): Artist[] {
+  return listArtistsStmt.all(`%${search}%`) as Artist[];
 }
 
 const listModulesForArtistStmt = db.prepare(`
@@ -53,12 +52,11 @@ const searchModulesStmt = db.prepare(`
   JOIN artists a ON a.id = m.artist_id
   WHERE m.module_name LIKE ? OR m.file_name LIKE ?
   ORDER BY COALESCE(m.module_name, m.file_name) COLLATE NOCASE
-  LIMIT ?
 `);
 
-export function searchModules(query: string, limit = 300): ModuleRow[] {
+export function searchModules(query: string): ModuleRow[] {
   const pattern = `%${query}%`;
-  return searchModulesStmt.all(pattern, pattern, limit) as ModuleRow[];
+  return searchModulesStmt.all(pattern, pattern) as ModuleRow[];
 }
 
 const listAllModulesRandomStmt = db.prepare(`
@@ -66,12 +64,11 @@ const listAllModulesRandomStmt = db.prepare(`
   FROM modules m
   JOIN artists a ON a.id = m.artist_id
   ORDER BY RANDOM()
-  LIMIT ?
 `);
 
 /** Every module across the whole catalog, in a fresh random order each call. */
-export function listAllModulesRandom(limit = 500): ModuleRow[] {
-  return listAllModulesRandomStmt.all(limit) as ModuleRow[];
+export function listAllModulesRandom(): ModuleRow[] {
+  return listAllModulesRandomStmt.all() as ModuleRow[];
 }
 
 const listGenresStmt = db.prepare(`
@@ -93,11 +90,10 @@ const listModulesForGenreStmt = db.prepare(`
   JOIN module_genres mg ON mg.module_id = m.id
   WHERE mg.genre_id = ?
   ORDER BY COALESCE(m.module_name, m.file_name) COLLATE NOCASE
-  LIMIT ?
 `);
 
-export function listModulesForGenre(genreId: number, limit = 500): ModuleRow[] {
-  return listModulesForGenreStmt.all(genreId, limit) as ModuleRow[];
+export function listModulesForGenre(genreId: number): ModuleRow[] {
+  return listModulesForGenreStmt.all(genreId) as ModuleRow[];
 }
 
 const listFavoritesStmt = db.prepare(`
