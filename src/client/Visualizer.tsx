@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Text } from "ink";
+import { pm } from "./singleton";
 
 const CHARS = " ▁▂▃▄▅▆▇█";
 
@@ -28,7 +29,28 @@ function downsample(bars: number[], targetCount: number): number[] {
   return result;
 }
 
-export function VisualizerBars({ bars, maxWidth }: { bars: number[]; maxWidth: number }) {
+/**
+ * Subscribes directly to the playback manager's high-frequency (12.5/sec)
+ * visualizer ticks itself, rather than taking bars as a prop threaded through
+ * the main PlaybackState. That state feeds the whole app's render, so
+ * routing 12.5 updates/sec through it re-rendered everything (sidebar, list,
+ * all of it) at that rate and caused visible flicker. Subscribing here
+ * instead keeps those re-renders confined to just this component.
+ */
+export function VisualizerBars({ maxWidth, active }: { maxWidth: number; active: boolean }) {
+  const [bars, setBars] = useState<number[]>(() => new Array(pm.getVisualizerBarCount()).fill(0));
+
+  useEffect(() => {
+    if (!active) return;
+    const handler = (b: number[]) => setBars(b);
+    pm.on("visualizer", handler);
+    return () => {
+      pm.off("visualizer", handler);
+    };
+  }, [active]);
+
+  if (!active) return null;
+
   const displayed = downsample(bars, Math.max(1, maxWidth));
   return (
     <Text>

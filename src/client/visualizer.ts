@@ -9,7 +9,11 @@ const SAMPLE_RATE = 44100;
 // count). The window (~186ms) is longer than the tick interval, so
 // consecutive ticks overlap — a mild, harmless smoothing effect.
 const FFT_SIZE = 8192;
-const TICK_MS = 80;
+// Plain ANSI terminal redraws (no double-buffering) get visibly flickery well
+// before 60fps-style rates; 125ms (8/sec) is close to cava's own default
+// "framerate" of a few dozen ms and reads as smooth without the flicker seen
+// at 80ms (12.5/sec).
+const TICK_MS = 125;
 // Generated at a higher resolution than any reasonable terminal width so the
 // UI can downsample to fit — decouples analysis resolution from display width
 // instead of hardcoding a bar count that overflows narrower terminals.

@@ -82,7 +82,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
             {statusLine}
           </Box>
           <Box flexGrow={1} justifyContent="flex-end">
-            <VisualizerBars bars={state.visualizerBars} maxWidth={visualizerWidth} />
+            <VisualizerBars maxWidth={visualizerWidth} active={showVisualizer} />
           </Box>
         </Box>
       ) : (

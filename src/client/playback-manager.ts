@@ -26,7 +26,6 @@ export interface PlaybackState {
   error?: string;
   queue: ModuleRow[];
   shuffled: boolean;
-  visualizerBars: number[];
 }
 
 const initialState: PlaybackState = {
@@ -39,7 +38,6 @@ const initialState: PlaybackState = {
   duration: null,
   queue: [],
   shuffled: false,
-  visualizerBars: new Array(BAR_COUNT).fill(0),
 };
 
 export class PlaybackManager extends EventEmitter {
@@ -108,9 +106,18 @@ export class PlaybackManager extends EventEmitter {
     this.player.on("error", (err: Error) => {
       this.setState({ phase: "error", error: err.message });
     });
+    // Kept out of PlaybackState/"change" deliberately: it ticks 12.5x/sec,
+    // and routing it through the same state as everything else re-rendered
+    // the whole app (sidebar, list, everything) at that rate, causing visible
+    // flicker. A separate event lets only the visualizer's own component
+    // subscribe and re-render.
     this.visualizer.on("data", (bars: number[]) => {
-      this.setState({ visualizerBars: bars });
+      this.emit("visualizer", bars);
     });
+  }
+
+  getVisualizerBarCount(): number {
+    return BAR_COUNT;
   }
 
   private async resumeFromFile(audioPath: string, token: number) {
