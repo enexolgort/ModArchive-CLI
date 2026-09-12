@@ -38,6 +38,18 @@ db.exec(`
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (module_id) REFERENCES modules(id)
   );
+
+  CREATE TABLE IF NOT EXISTS favorite_artists (
+    artist_id TEXT PRIMARY KEY,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (artist_id) REFERENCES artists(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS favorite_genres (
+    genre_id INTEGER PRIMARY KEY,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (genre_id) REFERENCES genres(id)
+  );
 `);
 
 // Migrate existing DB: add columns if they don't exist yet
@@ -101,6 +113,30 @@ export const removeFavorite = db.prepare(`
 
 export const isFavoriteStmt = db.prepare(`
   SELECT 1 FROM favorites WHERE module_id = ?
+`);
+
+export const addFavoriteArtist = db.prepare(`
+  INSERT OR IGNORE INTO favorite_artists (artist_id) VALUES (?)
+`);
+
+export const removeFavoriteArtist = db.prepare(`
+  DELETE FROM favorite_artists WHERE artist_id = ?
+`);
+
+export const isFavoriteArtistStmt = db.prepare(`
+  SELECT 1 FROM favorite_artists WHERE artist_id = ?
+`);
+
+export const addFavoriteGenre = db.prepare(`
+  INSERT OR IGNORE INTO favorite_genres (genre_id) VALUES (?)
+`);
+
+export const removeFavoriteGenre = db.prepare(`
+  DELETE FROM favorite_genres WHERE genre_id = ?
+`);
+
+export const isFavoriteGenreStmt = db.prepare(`
+  SELECT 1 FROM favorite_genres WHERE genre_id = ?
 `);
 
 export { db };

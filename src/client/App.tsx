@@ -10,8 +10,14 @@ import {
   searchModules,
   listFavorites,
   listAllModulesRandom,
+  listFavoriteArtists,
+  listFavoriteGenres,
   isFavorite,
   toggleFavorite,
+  isFavoriteArtist,
+  toggleFavoriteArtist,
+  isFavoriteGenre,
+  toggleFavoriteGenre,
   type Artist,
   type Genre,
   type ModuleRow,
@@ -28,14 +34,23 @@ function isDownloaded(mod: ModuleRow): boolean {
   return fs.existsSync(getModulePaths(mod).audioPath);
 }
 
-type Section = "artists" | "genres" | "search" | "favorites" | "all";
+type Section =
+  | "artists"
+  | "favorite-artists"
+  | "genres"
+  | "favorite-genres"
+  | "search"
+  | "favorites"
+  | "all";
 type Focus = "sidebar" | "content";
 
 const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
   { key: "artists", label: "Artists" },
+  { key: "favorite-artists", label: "Favorite Artists" },
   { key: "genres", label: "Genres" },
+  { key: "favorite-genres", label: "Favorite Genres" },
   { key: "search", label: "Search" },
-  { key: "favorites", label: "Favorites" },
+  { key: "favorites", label: "Favorite Mods" },
   { key: "all", label: "All Mods" },
 ];
 
@@ -57,8 +72,10 @@ interface SearchState {
 
 type ContentContext =
   | { kind: "artists-list" }
+  | { kind: "favorite-artists-list" }
   | { kind: "artists-modules"; artistId: string; artistName: string }
   | { kind: "genres-list" }
+  | { kind: "favorite-genres-list" }
   | { kind: "genres-modules"; genreId: number; genreName: string }
   | { kind: "search" }
   | { kind: "favorites" }
@@ -104,6 +121,8 @@ export function App() {
   });
   const [favoritesSelected, setFavoritesSelected] = useState(0);
   const [allSelected, setAllSelected] = useState(0);
+  const [favoriteArtistsSelected, setFavoriteArtistsSelected] = useState(0);
+  const [favoriteGenresSelected, setFavoriteGenresSelected] = useState(0);
 
   const [playState, setPlayState] = useState<PlaybackState>(pm.getState());
   const [favoritesVersion, setFavoritesVersion] = useState(0);
@@ -126,23 +145,25 @@ export function App() {
   }, []);
 
   const ctx: ContentContext = useMemo(() => {
-    if (section === "artists") {
-      return artistsState.drill
-        ? {
-            kind: "artists-modules",
-            artistId: artistsState.drill.artistId,
-            artistName: artistsState.drill.artistName,
-          }
-        : { kind: "artists-list" };
+    if (section === "artists" || section === "favorite-artists") {
+      if (artistsState.drill) {
+        return {
+          kind: "artists-modules",
+          artistId: artistsState.drill.artistId,
+          artistName: artistsState.drill.artistName,
+        };
+      }
+      return { kind: section === "artists" ? "artists-list" : "favorite-artists-list" };
     }
-    if (section === "genres") {
-      return genresState.drill
-        ? {
-            kind: "genres-modules",
-            genreId: genresState.drill.genreId,
-            genreName: genresState.drill.genreName,
-          }
-        : { kind: "genres-list" };
+    if (section === "genres" || section === "favorite-genres") {
+      if (genresState.drill) {
+        return {
+          kind: "genres-modules",
+          genreId: genresState.drill.genreId,
+          genreName: genresState.drill.genreName,
+        };
+      }
+      return { kind: section === "genres" ? "genres-list" : "favorite-genres-list" };
     }
     if (section === "search") return { kind: "search" };
     if (section === "favorites") return { kind: "favorites" };
@@ -155,10 +176,14 @@ export function App() {
     switch (ctx.kind) {
       case "artists-list":
         return listArtists(artistsState.query);
+      case "favorite-artists-list":
+        return listFavoriteArtists();
       case "artists-modules":
         return reorder(listModulesForArtist(ctx.artistId));
       case "genres-list":
         return listGenres();
+      case "favorite-genres-list":
+        return listFavoriteGenres();
       case "genres-modules":
         return reorder(listModulesForGenre(ctx.genreId));
       case "search":
@@ -193,6 +218,10 @@ export function App() {
         return favoritesSelected;
       case "all":
         return allSelected;
+      case "favorite-artists-list":
+        return favoriteArtistsSelected;
+      case "favorite-genres-list":
+        return favoriteGenresSelected;
     }
   }
 
@@ -219,6 +248,12 @@ export function App() {
       case "all":
         setAllSelected(n);
         return;
+      case "favorite-artists-list":
+        setFavoriteArtistsSelected(n);
+        return;
+      case "favorite-genres-list":
+        setFavoriteGenresSelected(n);
+        return;
     }
   }
 
@@ -243,7 +278,8 @@ export function App() {
   function handleEnter() {
     const sel = getSelected();
     switch (ctx.kind) {
-      case "artists-list": {
+      case "artists-list":
+      case "favorite-artists-list": {
         const artist = (items as Artist[])[sel];
         if (artist) {
           setArtistsState((s) => ({
@@ -258,7 +294,8 @@ export function App() {
         if (list[sel]) playList(list, sel);
         return;
       }
-      case "genres-list": {
+      case "genres-list":
+      case "favorite-genres-list": {
         const genre = (items as Genre[])[sel];
         if (genre) {
           setGenresState((s) => ({
@@ -323,6 +360,25 @@ export function App() {
     setTimeout(() => process.exit(0), 50);
   }
 
+  /**
+   * `*` favorites whatever is most relevant to the current view: the
+   * selected artist/genre while browsing those lists, otherwise the
+   * currently playing module (falling back to the selected one).
+   */
+  function toggleCurrentFavorite() {
+    if (ctx.kind === "artists-list" || ctx.kind === "favorite-artists-list") {
+      const artist = (items as Artist[])[getSelected()];
+      if (artist) toggleFavoriteArtist(artist.id);
+    } else if (ctx.kind === "genres-list" || ctx.kind === "favorite-genres-list") {
+      const genre = (items as Genre[])[getSelected()];
+      if (genre) toggleFavoriteGenre(genre.id);
+    } else {
+      const mod = playState.module ?? getSelectedModule();
+      if (mod) toggleFavorite(mod.id);
+    }
+    setFavoritesVersion((v) => v + 1);
+  }
+
   useInput((input, key) => {
     // Playback controls live on plain keys rather than Ctrl-combos: terminal
     // hosts (VS Code's integrated terminal in particular) intercept
@@ -341,11 +397,7 @@ export function App() {
       return;
     }
     if (input === "*") {
-      const mod = playState.module ?? getSelectedModule();
-      if (mod) {
-        toggleFavorite(mod.id);
-        setFavoritesVersion((v) => v + 1);
-      }
+      toggleCurrentFavorite();
       return;
     }
     if (input === "r" && !(focus === "content" && isTextCtx)) {
@@ -383,11 +435,7 @@ export function App() {
       return;
     }
     if (key.ctrl && input === "f") {
-      const mod = playState.module ?? getSelectedModule();
-      if (mod) {
-        toggleFavorite(mod.id);
-        setFavoritesVersion((v) => v + 1);
-      }
+      toggleCurrentFavorite();
       return;
     }
     if (key.ctrl && (input === "c" || input === "q")) {
@@ -465,6 +513,8 @@ export function App() {
     switch (ctx.kind) {
       case "artists-list":
         return <Text dimColor>Artists</Text>;
+      case "favorite-artists-list":
+        return <Text dimColor>Favorite Artists</Text>;
       case "artists-modules":
         return (
           <Text>
@@ -476,6 +526,8 @@ export function App() {
         );
       case "genres-list":
         return <Text dimColor>Genres</Text>;
+      case "favorite-genres-list":
+        return <Text dimColor>Favorite Genres</Text>;
       case "genres-modules":
         return (
           <Text>
@@ -488,7 +540,7 @@ export function App() {
       case "search":
         return <Text dimColor>Search</Text>;
       case "favorites":
-        return <Text dimColor>Favorites</Text>;
+        return <Text dimColor>Favorite Mods</Text>;
       case "all":
         return <Text dimColor>All Mods</Text>;
     }
@@ -526,7 +578,7 @@ export function App() {
       <Box marginTop={1} flexDirection="row">
         <Box
           flexDirection="column"
-          width={16}
+          width={22}
           marginRight={1}
           borderStyle="round"
           borderColor={focus === "sidebar" ? "cyan" : "gray"}
@@ -565,17 +617,22 @@ export function App() {
             </Box>
           )}
 
-          {ctx.kind === "artists-list" && (
+          {(ctx.kind === "artists-list" || ctx.kind === "favorite-artists-list") && (
             <SelectableList
               items={items as Artist[]}
               selectedIndex={selectedIndex}
-              emptyLabel="No artists found."
+              emptyLabel={
+                ctx.kind === "favorite-artists-list"
+                  ? "No favorite artists yet. Press * on an artist to add one."
+                  : "No artists found."
+              }
               renderItem={(artist, isSelected) => (
                 <Text
                   color={focus === "content" && isSelected ? "cyan" : undefined}
                   bold={focus === "content" && isSelected}
                 >
                   {focus === "content" && isSelected ? "❯ " : "  "}
+                  {isFavoriteArtist(artist.id) ? <Text color="yellow">★ </Text> : "  "}
                   {artist.name}
                   <Text dimColor>
                     {"  "}
@@ -599,7 +656,7 @@ export function App() {
                 ctx.kind === "search" && !searchState.query.trim()
                   ? "Type to search…"
                   : ctx.kind === "favorites"
-                    ? "No favorites yet. Press * on a module to add one."
+                    ? "No favorite mods yet. Press * on a module to add one."
                     : "No modules found."
               }
               renderItem={(mod, isSelected) => {
@@ -628,17 +685,22 @@ export function App() {
             />
           )}
 
-          {ctx.kind === "genres-list" && (
+          {(ctx.kind === "genres-list" || ctx.kind === "favorite-genres-list") && (
             <SelectableList
               items={items as Genre[]}
               selectedIndex={selectedIndex}
-              emptyLabel="No genres found."
+              emptyLabel={
+                ctx.kind === "favorite-genres-list"
+                  ? "No favorite genres yet. Press * on a genre to add one."
+                  : "No genres found."
+              }
               renderItem={(genre, isSelected) => (
                 <Text
                   color={focus === "content" && isSelected ? "cyan" : undefined}
                   bold={focus === "content" && isSelected}
                 >
                   {focus === "content" && isSelected ? "❯ " : "  "}
+                  {isFavoriteGenre(genre.id) ? <Text color="yellow">★ </Text> : "  "}
                   {genre.name}
                   <Text dimColor>
                     {"  "}

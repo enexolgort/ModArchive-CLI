@@ -53,6 +53,14 @@ module_genres        (N-to-N join table)
 favorites            (modules starred in the client)
 ├── module_id      TEXT  → modules.id
 └── added_at       TEXT  (timestamp)
+
+favorite_artists     (artists starred in the client)
+├── artist_id      TEXT  → artists.id
+└── added_at       TEXT  (timestamp)
+
+favorite_genres      (genres starred in the client)
+├── genre_id       INTEGER → genres.id
+└── added_at       TEXT  (timestamp)
 ```
 
 ---
@@ -68,9 +76,11 @@ npm run client
 ### Sections
 
 - **Artists** — browse/search all indexed artists, drill into an artist to see their modules
+- **Favorite Artists** — artists you've starred; drilling in works exactly like the main Artists page
 - **Genres** — browse genres (with module counts), drill into a genre to see its modules
+- **Favorite Genres** — genres you've starred; drilling in works exactly like the main Genres page
 - **Search** — full-text search across module and file names
-- **Favorites** — modules you've starred
+- **Favorite Mods** — modules you've starred
 - **All Mods** — every module in the catalog, in a fresh random order each time you open the page
 
 ### How playback works
@@ -98,7 +108,7 @@ While browsing a specific artist's or genre's module list, press `c` to download
 | `Esc` | Back out of an artist/genre's module list |
 | `Space` | Pause / resume |
 | `b` / `n` | Previous / next track |
-| `*` | Toggle favorite on the selected/playing module |
+| `*` | Toggle favorite — the selected artist/genre while browsing those lists, otherwise the playing (or selected) module |
 | `r` | Toggle shuffle (press again to restore original order) |
 | `\` | Stop |
 | `c` | Convert a whole artist/genre's modules (see above) |

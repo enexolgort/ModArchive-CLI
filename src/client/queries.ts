@@ -1,4 +1,15 @@
-import { db, addFavorite, removeFavorite, isFavoriteStmt } from "../db";
+import {
+  db,
+  addFavorite,
+  removeFavorite,
+  isFavoriteStmt,
+  addFavoriteArtist,
+  removeFavoriteArtist,
+  isFavoriteArtistStmt,
+  addFavoriteGenre,
+  removeFavoriteGenre,
+  isFavoriteGenreStmt,
+} from "../db";
 
 export interface Artist {
   id: string;
@@ -118,5 +129,55 @@ export function toggleFavorite(moduleId: string): boolean {
     return false;
   }
   addFavorite.run(moduleId);
+  return true;
+}
+
+const listFavoriteArtistsStmt = db.prepare(`
+  SELECT a.id, a.name, a.module_count, a.rating, a.rating_count
+  FROM favorite_artists fa
+  JOIN artists a ON a.id = fa.artist_id
+  ORDER BY fa.added_at DESC
+`);
+
+export function listFavoriteArtists(): Artist[] {
+  return listFavoriteArtistsStmt.all() as Artist[];
+}
+
+export function isFavoriteArtist(artistId: string): boolean {
+  return isFavoriteArtistStmt.get(artistId) !== undefined;
+}
+
+export function toggleFavoriteArtist(artistId: string): boolean {
+  if (isFavoriteArtist(artistId)) {
+    removeFavoriteArtist.run(artistId);
+    return false;
+  }
+  addFavoriteArtist.run(artistId);
+  return true;
+}
+
+const listFavoriteGenresStmt = db.prepare(`
+  SELECT g.id, g.name, COUNT(mg.module_id) as module_count
+  FROM favorite_genres fg
+  JOIN genres g ON g.id = fg.genre_id
+  LEFT JOIN module_genres mg ON mg.genre_id = g.id
+  GROUP BY g.id
+  ORDER BY fg.added_at DESC
+`);
+
+export function listFavoriteGenres(): Genre[] {
+  return listFavoriteGenresStmt.all() as Genre[];
+}
+
+export function isFavoriteGenre(genreId: number): boolean {
+  return isFavoriteGenreStmt.get(genreId) !== undefined;
+}
+
+export function toggleFavoriteGenre(genreId: number): boolean {
+  if (isFavoriteGenre(genreId)) {
+    removeFavoriteGenre.run(genreId);
+    return false;
+  }
+  addFavoriteGenre.run(genreId);
   return true;
 }
