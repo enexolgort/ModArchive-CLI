@@ -5,6 +5,7 @@ import { getModulePaths } from "./paths";
 import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3, probeDuration } from "./converter";
 import { Player } from "./player";
+import { CavaFeed } from "./cava-feed";
 
 export type PlaybackPhase =
   | "idle"
@@ -41,6 +42,7 @@ const initialState: PlaybackState = {
 
 export class PlaybackManager extends EventEmitter {
   private player = new Player();
+  private cavaFeed = new CavaFeed();
   private state: PlaybackState = { ...initialState };
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
   private queue: ModuleRow[] = [];
@@ -114,6 +116,7 @@ export class PlaybackManager extends EventEmitter {
     this.setState({ phase: "playing", elapsed: 0, duration });
     this.playStartedAt = Date.now();
     this.player.play(audioPath);
+    this.cavaFeed.start(audioPath);
     this.startElapsedTimer();
   }
 
@@ -123,6 +126,7 @@ export class PlaybackManager extends EventEmitter {
     this.playStartedAt = Date.now();
     this.setState({ phase: "playing", elapsed: fromSeconds });
     this.player.play(audioPath, fromSeconds);
+    this.cavaFeed.start(audioPath, fromSeconds);
     this.startElapsedTimer();
   }
 
@@ -153,6 +157,7 @@ export class PlaybackManager extends EventEmitter {
       await this.playIndex(this.queueIndex + 1);
     } else {
       this.player.stop();
+      this.cavaFeed.stop();
       this.setState({ ...initialState });
     }
   }
@@ -195,6 +200,7 @@ export class PlaybackManager extends EventEmitter {
   async playModule(mod: ModuleRow) {
     const token = ++this.playToken;
     this.player.stop();
+    this.cavaFeed.stop();
     this.stopElapsedTimer();
     this.abortController?.abort();
     const controller = new AbortController();
@@ -260,6 +266,7 @@ export class PlaybackManager extends EventEmitter {
   togglePause() {
     if (this.state.phase === "playing") {
       this.player.pause();
+      this.cavaFeed.stop();
       this.stopElapsedTimer();
       // Freeze the accumulated position so a later resume continues counting
       // from here rather than jumping back to where this segment started.
@@ -267,6 +274,9 @@ export class PlaybackManager extends EventEmitter {
       this.setState({ phase: "paused" });
     } else if (this.state.phase === "paused") {
       this.player.resume();
+      if (this.state.module) {
+        this.cavaFeed.start(getModulePaths(this.state.module).audioPath, this.segmentBaseOffset);
+      }
       this.playStartedAt = Date.now();
       this.startElapsedTimer();
       this.setState({ phase: "playing" });
@@ -279,6 +289,7 @@ export class PlaybackManager extends EventEmitter {
     this.segmentBaseOffset = 0;
     this.abortController?.abort();
     this.player.stop();
+    this.cavaFeed.stop();
     this.stopElapsedTimer();
     this.setState({ ...initialState });
   }

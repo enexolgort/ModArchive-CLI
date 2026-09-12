@@ -6,6 +6,7 @@
   "scripts": {
     "client": "tsx src/client/index.tsx",
     "ui": "tsx src/client/index.tsx",
+    "cava": "cava -p cava-modarchive.config",
     "scrap": "ts-node src/scraper-runner.ts",
     "scrap:artists": "ts-node src/scraper-runner.ts artists",
     "scrap:modules": "ts-node src/scraper-runner.ts modules",
