@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { PlaybackState } from "./playback-manager";
 import { formatTime } from "./format";
 import { ProgressBar } from "./ProgressBar";
+import { VisualizerBars } from "./Visualizer";
 
 export function NowPlayingBar({ state }: { state: PlaybackState }) {
   const { phase, module } = state;
@@ -58,6 +59,8 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
     statusLine = <Text color="red">⚠ Error: {state.error}</Text>;
   }
 
+  const showVisualizer = phase === "playing" || phase === "paused";
+
   return (
     <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
       <Text>
@@ -65,6 +68,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
         {state.shuffled && <Text color="magenta">  🔀 Shuffle</Text>}
       </Text>
       <Box>{statusLine}</Box>
+      {showVisualizer && <VisualizerBars bars={state.visualizerBars} />}
     </Box>
   );
 }
