@@ -1,11 +1,20 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import type { PlaybackState } from "./playback-manager";
 import { formatTime } from "./format";
 import { ProgressBar } from "./ProgressBar";
 import { VisualizerBars } from "./Visualizer";
 
+// Worst-case width of the status column ("▶ " + 30-char progress bar + " " +
+// "mm:ss / mm:ss") plus border, padding, and the gap between the two halves —
+// subtracted from the terminal width so the visualizer fills whatever's left
+// without wrapping, instead of a fixed bar count that overflows narrow
+// terminals or leaves wide ones half-empty.
+const RESERVED_WIDTH = 52;
+
 export function NowPlayingBar({ state }: { state: PlaybackState }) {
+  const { stdout } = useStdout();
+  const visualizerWidth = Math.max(4, (stdout?.columns ?? 80) - RESERVED_WIDTH);
   const { phase, module } = state;
 
   if (!module || phase === "idle") {
@@ -73,7 +82,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
             {statusLine}
           </Box>
           <Box flexGrow={1} justifyContent="flex-end">
-            <VisualizerBars bars={state.visualizerBars} />
+            <VisualizerBars bars={state.visualizerBars} maxWidth={visualizerWidth} />
           </Box>
         </Box>
       ) : (

@@ -3,11 +3,17 @@ import { EventEmitter } from "events";
 
 const SAMPLE_RATE = 44100;
 // 1024 samples (~43Hz/bin) collapses several of the log-spaced low-frequency
-// bars onto the same bin, making bass look pegged/undifferentiated. 4096
-// (~11Hz/bin) resolves them cleanly, verified against real band-edge output.
-const FFT_SIZE = 4096;
+// bars onto the same bin, making bass look pegged/undifferentiated. 8192
+// (~5.4Hz/bin) resolves all 64 bars with zero duplicate edges, verified
+// against real band-edge output (4096 still had a few dupes at this bar
+// count). The window (~186ms) is longer than the tick interval, so
+// consecutive ticks overlap — a mild, harmless smoothing effect.
+const FFT_SIZE = 8192;
 const TICK_MS = 80;
-const BAR_COUNT = 24;
+// Generated at a higher resolution than any reasonable terminal width so the
+// UI can downsample to fit — decouples analysis resolution from display width
+// instead of hardcoding a bar count that overflows narrower terminals.
+const BAR_COUNT = 64;
 const DECAY = 0.75; // per-tick falloff for bars that aren't re-hit, cava-style "gravity"
 
 /** In-place iterative radix-2 Cooley-Tukey FFT. `real`/`imag` length must be a power of 2. */
