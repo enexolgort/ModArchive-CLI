@@ -19,6 +19,7 @@ import {
   toggleFavoriteArtist,
   isFavoriteGenre,
   toggleFavoriteGenre,
+  listGenreNamesForModule,
   listPlaylists,
   listPlaylistModules,
   createPlaylist,
@@ -981,6 +982,7 @@ export function App() {
               }
               renderItem={(mod, isSelected) => {
                 const downloaded = isDownloaded(mod);
+                const genres = ctx.kind !== "genres-modules" ? listGenreNamesForModule(mod.id) : [];
                 return (
                   <Text
                     color={
@@ -1003,6 +1005,7 @@ export function App() {
                       ctx.kind === "playlists-modules") && (
                       <Text dimColor> — {mod.artist_name}</Text>
                     )}
+                    {genres.length > 0 && <Text dimColor>  [{genres.join(", ")}]</Text>}
                   </Text>
                 );
               }}

@@ -40,6 +40,8 @@ npm install
 
 The scraper writes to `scraper.db` in the project root. The file is created automatically on first run.
 
+> **Note:** `scraper.db` is checked into this repo, so cloning it also clones whatever catalog, favorites, and playlists happen to be in it at the time (the maintainer's own, currently). If you want a clean slate instead, delete `scraper.db` before running anything, then repopulate the catalog from scratch with `npm run scrap` (see [Scripts](#scripts) below — this re-crawls the full ModArchive roster, so it takes a while).
+
 ### Schema
 
 ```
