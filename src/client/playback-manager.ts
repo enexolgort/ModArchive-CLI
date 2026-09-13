@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
+import { markDownloaded } from "./queries";
 import { getModulePaths } from "./paths";
 import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3, probeDuration } from "./converter";
@@ -255,6 +256,7 @@ export class PlaybackManager extends EventEmitter {
       }
       if (token !== this.playToken) return;
 
+      markDownloaded(mod.id);
       await this.resumeFromFile(audioPath, token);
     } catch (err: any) {
       if (err instanceof AbortedError) return;

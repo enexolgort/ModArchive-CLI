@@ -17,6 +17,7 @@ db.exec(`
     file_name TEXT NOT NULL,
     module_name TEXT,
     md5 TEXT,
+    downloaded INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (artist_id) REFERENCES artists(id)
   );
 
@@ -57,6 +58,7 @@ const migrations = [
   `ALTER TABLE artists ADD COLUMN module_count INTEGER`,
   `ALTER TABLE artists ADD COLUMN rating REAL`,
   `ALTER TABLE artists ADD COLUMN rating_count INTEGER`,
+  `ALTER TABLE modules ADD COLUMN downloaded INTEGER NOT NULL DEFAULT 0`,
 ];
 
 for (const sql of migrations) {
@@ -101,6 +103,16 @@ export const getArtistModuleCount = db.prepare(`
 
 export const countModulesForArtist = db.prepare(`
   SELECT COUNT(*) as count FROM modules WHERE artist_id = ?
+`);
+
+export const setModuleDownloaded = db.prepare(`
+  UPDATE modules SET downloaded = ? WHERE id = ?
+`);
+
+export const listModulesForDownloadScanStmt = db.prepare(`
+  SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5, m.downloaded
+  FROM modules m
+  JOIN artists a ON a.id = m.artist_id
 `);
 
 export const addFavorite = db.prepare(`

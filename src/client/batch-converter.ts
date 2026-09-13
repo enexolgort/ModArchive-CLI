@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
+import { markDownloaded } from "./queries";
 import { getModulePaths } from "./paths";
 import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3 } from "./converter";
@@ -79,6 +80,7 @@ export class BatchConverter extends EventEmitter {
           await convertToMp3(rawPath, audioPath, undefined, controller.signal);
           fs.rm(rawPath, { force: true }, () => {});
         }
+        markDownloaded(mod.id);
       } catch (err: any) {
         if (err instanceof AbortedError) return;
         if (token !== this.runToken) return;

@@ -10,6 +10,8 @@ import {
   addFavoriteGenre,
   removeFavoriteGenre,
   isFavoriteGenreStmt,
+  setModuleDownloaded,
+  listModulesForDownloadScanStmt,
 } from "../db";
 import { getModulePaths } from "./paths";
 
@@ -184,10 +186,11 @@ export function toggleFavoriteGenre(genreId: number): boolean {
   return true;
 }
 
-const listAllModulesStmt = db.prepare(`
+const listDownloadedModulesStmt = db.prepare(`
   SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
   FROM modules m
   JOIN artists a ON a.id = m.artist_id
+  WHERE m.downloaded = 1
 `);
 
 export interface DownloadedModule {
@@ -195,9 +198,35 @@ export interface DownloadedModule {
   bytes: number;
 }
 
-/** Every module that's already been downloaded and converted to mp3, with file size. */
+/** Marks a module downloaded once its mp3 has actually landed on disk. */
+export function markDownloaded(moduleId: string) {
+  setModuleDownloaded.run(1, moduleId);
+}
+
+/**
+ * Reconciles the `downloaded` flag against what's actually on disk — the
+ * files are the source of truth, so this corrects the DB to match them
+ * (rather than the other way around) in either direction: files removed
+ * outside the app, or a DB reset/restore that lost track of what's already
+ * cached. Meant to run once at startup rather than on every render, since it
+ * walks the whole catalog.
+ */
+export function reconcileDownloaded() {
+  const all = listModulesForDownloadScanStmt.all() as (ModuleRow & { downloaded: number })[];
+  const apply = db.transaction((rows: (ModuleRow & { downloaded: number })[]) => {
+    for (const row of rows) {
+      const actuallyDownloaded = fs.existsSync(getModulePaths(row).audioPath);
+      if (actuallyDownloaded !== !!row.downloaded) {
+        setModuleDownloaded.run(actuallyDownloaded ? 1 : 0, row.id);
+      }
+    }
+  });
+  apply(all);
+}
+
+/** Every module already marked downloaded, with its file size on disk. */
 export function listDownloaded(): DownloadedModule[] {
-  const all = listAllModulesStmt.all() as ModuleRow[];
+  const all = listDownloadedModulesStmt.all() as ModuleRow[];
   const result: DownloadedModule[] = [];
   for (const module of all) {
     const { audioPath } = getModulePaths(module);
@@ -205,7 +234,8 @@ export function listDownloaded(): DownloadedModule[] {
       const bytes = fs.statSync(audioPath).size;
       result.push({ module, bytes });
     } catch {
-      // Not downloaded — skip.
+      // Flag says downloaded but the file's gone — reconcileDownloaded() will
+      // catch this on the next startup scan; skip it for now.
     }
   }
   return result;
