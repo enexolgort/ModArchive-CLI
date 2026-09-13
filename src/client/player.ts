@@ -16,6 +16,12 @@ export type PlayerStatus = "playing" | "paused" | "stopped";
 // never advances), so it's only used outside WSL.
 const IS_WSL = !!process.env.WSL_DISTRO_NAME;
 const USE_PULSE_OUTPUT = !!process.env.PULSE_SERVER;
+// Neither the WSL-interop backend nor a plain ffplay/ffmpeg child process on
+// native Windows can be suspended with SIGSTOP/SIGCONT — Windows has no such
+// signals, and Node throws ERR_UNKNOWN_SIGNAL if asked to send them. Pause
+// there instead kills and relaunches with -ss/-StartSeconds from wherever
+// playback had gotten to, same as the WSL-interop backend already did.
+const PAUSE_VIA_RELAUNCH = IS_WSL || process.platform === "win32";
 
 const WIN_PLAYER_SCRIPT = toWindowsPathSafe(
   path.join(process.cwd(), "src", "client", "win-player.ps1"),
@@ -33,12 +39,15 @@ export class Player extends EventEmitter {
   private proc: ChildProcess | null = null;
   private status: PlayerStatus = "stopped";
 
-  // The Windows-interop backend has no live control channel (stdin over the
+  // Tracks which backend startProcess() last used, purely to know whether a
+  // relaunch (see PAUSE_VIA_RELAUNCH above) should go through the WSL-interop
+  // script or a plain ffmpeg/ffplay respawn. The WSL-interop backend has the
+  // added wrinkle of no live control channel at all (stdin over the
   // WSL<->Windows interop bridge only reliably delivers the first line to a
-  // long-running process — verified empirically). So pause/resume there kill
-  // the process and re-launch it with -StartSeconds instead of pausing in
-  // place, which means the Player has to track its own position rather than
-  // relying on the caller to hand it back on resume().
+  // long-running process — verified empirically), but relaunch-from-offset
+  // covers that the same way it covers Windows' lack of SIGSTOP/SIGCONT: the
+  // Player tracks its own position rather than relying on the caller to hand
+  // it back on resume().
   private usingWindowsInterop = false;
   private currentFilePath: string | null = null;
   private segmentStartOffset = 0;
@@ -49,7 +58,10 @@ export class Player extends EventEmitter {
     this.currentFilePath = filePath;
     this.segmentStartOffset = startOffsetSeconds;
     this.segmentStartedAt = Date.now();
+    this.startProcess(filePath, startOffsetSeconds);
+  }
 
+  private startProcess(filePath: string, startOffsetSeconds: number) {
     if (IS_WSL && WIN_PLAYER_SCRIPT) {
       this.usingWindowsInterop = true;
       this.spawnWindowsPlayer(filePath, startOffsetSeconds);
@@ -153,7 +165,7 @@ export class Player extends EventEmitter {
   pause() {
     if (!this.proc || this.status !== "playing") return;
 
-    if (this.usingWindowsInterop) {
+    if (PAUSE_VIA_RELAUNCH) {
       this.segmentStartOffset += (Date.now() - this.segmentStartedAt) / 1000;
       this.killSilently();
     } else {
@@ -165,10 +177,10 @@ export class Player extends EventEmitter {
   resume() {
     if (this.status !== "paused") return;
 
-    if (this.usingWindowsInterop) {
+    if (PAUSE_VIA_RELAUNCH) {
       if (!this.currentFilePath) return;
       this.segmentStartedAt = Date.now();
-      this.spawnWindowsPlayer(this.currentFilePath, this.segmentStartOffset);
+      this.startProcess(this.currentFilePath, this.segmentStartOffset);
     } else {
       this.proc?.kill("SIGCONT");
     }

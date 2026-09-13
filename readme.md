@@ -11,6 +11,19 @@ A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) c
 - [ffmpeg](https://ffmpeg.org/) on `PATH` (needs `libopenmpt` support for tracker formats — most distro packages include it) — used to convert downloaded modules to MP3 and, outside WSL, to play them back
 - A working internet connection
 
+> **On Windows, this project must be run from inside WSL**, not from a Windows shell.
+> `npm run client`/`npm run ui` invoke `tsx`, a Linux binary installed into this project's
+> `node_modules` — it only exists inside the WSL filesystem. Open a real WSL terminal (`wsl`
+> from cmd/PowerShell, or a WSL/Ubuntu profile in Windows Terminal) and `cd` into the project
+> using its Linux path (e.g. `/home/<you>/projects/ModArchive-CLI`), then run npm commands from
+> there. Running `npm run ...` from PowerShell after `cd`-ing into the project's `\\wsl.localhost\...`
+> UNC path does **not** work: npm scripts execute via `cmd.exe`, which can't use a UNC path as its
+> working directory and silently falls back to a Windows default directory where `tsx` isn't on `PATH`.
+> The only piece of this project that intentionally crosses into Windows is actual audio
+> playback (`src/client/win-player.ps1`, invoked via WSL/Windows interop) — everything else,
+> including running the app itself and `npm run cava` (see below), is a WSL/Linux program. `cava`
+> itself has no Windows build at all, so there's no way to run it outside WSL either way.
+
 ---
 
 ## Installation
@@ -123,6 +136,18 @@ Playback always goes through `ffmpeg`, but *how* differs by environment:
 - **WSL**: audio is played by a native Windows process (`src/client/win-player.ps1`, driven via `powershell.exe` over the WSL/Windows interop bridge), so it goes through Windows' own audio stack instead of WSLg's PulseAudio bridge — the latter was found to progressively lose throughput on long streams and eventually drop the connection, regardless of audio format.
 - **Linux with PulseAudio** (`$PULSE_SERVER` set, non-WSL): plays via `ffmpeg -f pulse`.
 - **Everything else**: plays via `ffplay`.
+
+### Spectrum visualizer (cava)
+
+Actual playback bypasses WSLg's PulseAudio entirely (see above), so a `cava` instance running in WSL can't see this app's audio via its usual `pulse`/`alsa` input methods — there's no bridge between them. Instead, `src/client/cava-feed.ts` runs a second, independent real-time-paced `ffmpeg` decode of whatever file is currently playing and streams raw PCM into a named pipe at `/tmp/modarchive-cava.fifo`, driven by the same play/pause/resume/stop lifecycle as actual playback (`src/client/playback-manager.ts`). Point a standalone `cava` at that pipe and it renders real, audio-reactive bars — it's just a second decode of the same file, decoupled from whatever is actually producing sound, so it can drift slightly from real playback over a long track.
+
+In a separate WSL terminal:
+
+```bash
+npm run cava
+```
+
+which runs `cava -p cava-modarchive.config` (the config in the project root, pre-pointed at the right pipe). Start it before or after playback — it retries until the app creates the pipe. `cava` is a Linux-only tool with no Windows build, so this only ever works run from inside WSL, never from a native Windows shell.
 
 ---
 
