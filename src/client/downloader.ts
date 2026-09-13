@@ -2,9 +2,19 @@ import * as fs from "fs";
 import * as path from "path";
 import * as https from "https";
 import * as http from "http";
+import * as crypto from "crypto";
 import type { ClientRequest } from "http";
 
 const DOWNLOAD_BASE = "https://api.modarchive.org/downloads.php?moduleid=";
+
+// ModArchive's servers reset connections mid-download regularly enough that
+// the scraper (src/scraper.ts) already retries on this — same treatment here,
+// since without it every transient reset surfaced as a hard error requiring
+// the user to manually re-select the track.
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 5000;
+const RETRYABLE_CODES = ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED"];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class AbortedError extends Error {
   constructor() {
@@ -13,16 +23,45 @@ export class AbortedError extends Error {
   }
 }
 
-export function downloadModule(
+export async function downloadModule(
   moduleId: string,
   destPath: string,
   onProgress?: (receivedBytes: number, totalBytes: number | null) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const tmpPath = `${destPath}.part`;
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  // Unique per call, not just per destPath — see the matching comment in
+  // converter.ts: the same module can get downloaded from two call sites
+  // at once (playback + a batch convert), and a shared deterministic tmp
+  // name let one call's abort-cleanup delete the other's in-progress file.
+  const tmpPath = `${destPath}.${process.pid}-${crypto.randomUUID()}.part`;
 
+  let retries = MAX_RETRIES;
+  for (;;) {
+    try {
+      await attemptDownload(moduleId, destPath, tmpPath, onProgress, signal);
+      return;
+    } catch (err: any) {
+      if (err instanceof AbortedError) throw err;
+      if (retries > 0 && RETRYABLE_CODES.includes(err?.code)) {
+        retries--;
+        await sleep(RETRY_DELAY_MS);
+        if (signal?.aborted) throw new AbortedError();
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function attemptDownload(
+  moduleId: string,
+  destPath: string,
+  tmpPath: string,
+  onProgress: ((receivedBytes: number, totalBytes: number | null) => void) | undefined,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new AbortedError());
       return;

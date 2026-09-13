@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import * as fs from "fs";
+import * as crypto from "crypto";
 import { AbortedError } from "./downloader";
 
 export function convertToMp3(
@@ -14,7 +15,13 @@ export function convertToMp3(
       return;
     }
 
-    const tmpPath = `${destPath}.part.mp3`;
+    // Unique per call, not just per destPath: the same module can get
+    // converted from two call sites at once (e.g. playing a track that's
+    // also mid-batch-convert), and a shared deterministic tmp name let one
+    // call's abort-cleanup delete the other's in-progress file out from
+    // under it, right before its rename — surfacing as an ENOENT rename
+    // crash on the "successful" one.
+    const tmpPath = `${destPath}.${process.pid}-${crypto.randomUUID()}.part.mp3`;
     const proc = spawn("ffmpeg", [
       "-y",
       "-i",
