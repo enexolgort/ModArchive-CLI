@@ -123,6 +123,18 @@ export function listModulesForGenre(genreId: number): ModuleRow[] {
   return listModulesForGenreStmt.all(genreId) as ModuleRow[];
 }
 
+const listGenreNamesForModuleStmt = db.prepare(`
+  SELECT g.name
+  FROM module_genres mg
+  JOIN genres g ON g.id = mg.genre_id
+  WHERE mg.module_id = ?
+  ORDER BY g.name COLLATE NOCASE
+`);
+
+export function listGenreNamesForModule(moduleId: string): string[] {
+  return (listGenreNamesForModuleStmt.all(moduleId) as { name: string }[]).map((r) => r.name);
+}
+
 const listFavoritesStmt = db.prepare(`
   SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
   FROM favorites f
@@ -251,6 +263,53 @@ export function listDownloaded(): DownloadedModule[] {
     }
   }
   return result;
+}
+
+export interface DownloadCount {
+  name: string;
+  downloaded: number;
+  favorites: number;
+}
+
+const downloadedCountsByArtistStmt = db.prepare(`
+  SELECT
+    a.name as name,
+    COUNT(DISTINCT CASE WHEN m.downloaded = 1 THEN m.id END) as downloaded,
+    COUNT(DISTINCT f.module_id) as favorites
+  FROM modules m
+  JOIN artists a ON a.id = m.artist_id
+  LEFT JOIN favorites f ON f.module_id = m.id
+  GROUP BY m.artist_id
+  HAVING downloaded > 0 OR favorites > 0
+  ORDER BY downloaded DESC, favorites DESC, name COLLATE NOCASE
+`);
+
+/** Downloaded + favorited mod counts per artist (favorites counted regardless of download status), busiest first. */
+export function listDownloadedCountsByArtist(): DownloadCount[] {
+  return downloadedCountsByArtistStmt.all() as DownloadCount[];
+}
+
+const downloadedCountsByGenreStmt = db.prepare(`
+  SELECT
+    g.name as name,
+    COUNT(DISTINCT CASE WHEN m.downloaded = 1 THEN m.id END) as downloaded,
+    COUNT(DISTINCT f.module_id) as favorites
+  FROM module_genres mg
+  JOIN genres g ON g.id = mg.genre_id
+  JOIN modules m ON m.id = mg.module_id
+  LEFT JOIN favorites f ON f.module_id = m.id
+  GROUP BY mg.genre_id
+  HAVING downloaded > 0 OR favorites > 0
+  ORDER BY downloaded DESC, favorites DESC, name COLLATE NOCASE
+`);
+
+/**
+ * Downloaded + favorited mod counts per genre (favorites counted regardless
+ * of download status), busiest first. A mod can carry more than one genre,
+ * so these counts don't sum to the overall totals.
+ */
+export function listDownloadedCountsByGenre(): DownloadCount[] {
+  return downloadedCountsByGenreStmt.all() as DownloadCount[];
 }
 
 const listPlaylistsStmt = db.prepare(`

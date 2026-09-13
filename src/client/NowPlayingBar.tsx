@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { PlaybackState } from "./playback-manager";
 import { formatTime } from "./format";
 import { ProgressBar } from "./ProgressBar";
+import { listGenreNamesForModule } from "./queries";
 
 export function NowPlayingBar({ state }: { state: PlaybackState }) {
   const { phase, module } = state;
@@ -17,6 +18,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
 
   const title = module.module_name || module.file_name;
   const label = `${title} — ${module.artist_name}`;
+  const genres = listGenreNamesForModule(module.id);
 
   let statusLine: React.ReactNode;
   if (phase === "downloading") {
@@ -62,6 +64,7 @@ export function NowPlayingBar({ state }: { state: PlaybackState }) {
     <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
       <Text>
         <Text bold>{label}</Text>
+        {genres.length > 0 && <Text dimColor>  [{genres.join(", ")}]</Text>}
         {state.shuffled && <Text color="magenta">  🔀 Shuffle</Text>}
       </Text>
       <Box>{statusLine}</Box>
