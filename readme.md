@@ -2,6 +2,8 @@
 
 A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) catalog into a local SQLite database — artists, modules, genres, ratings, and more — plus a terminal UI (built with [Ink](https://github.com/vadimdemedes/ink)) for browsing that catalog and playing modules, Spotify-style, right from the terminal.
 
+> **Testing status:** so far this has only actually been run and verified under WSL. Plain Linux, native Windows, and macOS are expected to work (see the platform notes below) but haven't been tested — treat them as unverified until confirmed.
+
 ---
 
 ## Requirements
@@ -136,18 +138,6 @@ Playback always goes through `ffmpeg`, but *how* differs by environment:
 - **WSL**: audio is played by a native Windows process (`src/client/win-player.ps1`, driven via `powershell.exe` over the WSL/Windows interop bridge), so it goes through Windows' own audio stack instead of WSLg's PulseAudio bridge — the latter was found to progressively lose throughput on long streams and eventually drop the connection, regardless of audio format.
 - **Linux with PulseAudio** (`$PULSE_SERVER` set, non-WSL): plays via `ffmpeg -f pulse`.
 - **Everything else**: plays via `ffplay`.
-
-### Spectrum visualizer (cava)
-
-Actual playback bypasses WSLg's PulseAudio entirely (see above), so a `cava` instance running in WSL can't see this app's audio via its usual `pulse`/`alsa` input methods — there's no bridge between them. Instead, `src/client/cava-feed.ts` runs a second, independent real-time-paced `ffmpeg` decode of whatever file is currently playing and streams raw PCM into a named pipe at `/tmp/modarchive-cava.fifo`, driven by the same play/pause/resume/stop lifecycle as actual playback (`src/client/playback-manager.ts`). Point a standalone `cava` at that pipe and it renders real, audio-reactive bars — it's just a second decode of the same file, decoupled from whatever is actually producing sound, so it can drift slightly from real playback over a long track.
-
-In a separate WSL terminal:
-
-```bash
-npm run cava
-```
-
-which runs `cava -p cava-modarchive.config` (the config in the project root, pre-pointed at the right pipe). Start it before or after playback — it retries until the app creates the pipe. `cava` is a Linux-only tool with no Windows build, so this only ever works run from inside WSL, never from a native Windows shell.
 
 ---
 
