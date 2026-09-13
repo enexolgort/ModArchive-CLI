@@ -12,6 +12,12 @@ import {
   isFavoriteGenreStmt,
   setModuleDownloaded,
   listModulesForDownloadScanStmt,
+  insertPlaylist,
+  getPlaylistByName,
+  deletePlaylistStmt,
+  deletePlaylistModulesStmt,
+  addPlaylistModuleStmt,
+  removePlaylistModuleStmt,
 } from "../db";
 import { getModulePaths } from "./paths";
 
@@ -24,6 +30,12 @@ export interface Artist {
 }
 
 export interface Genre {
+  id: number;
+  name: string;
+  module_count: number;
+}
+
+export interface Playlist {
   id: number;
   name: string;
   module_count: number;
@@ -239,4 +251,49 @@ export function listDownloaded(): DownloadedModule[] {
     }
   }
   return result;
+}
+
+const listPlaylistsStmt = db.prepare(`
+  SELECT p.id, p.name, COUNT(pm.module_id) as module_count
+  FROM playlists p
+  LEFT JOIN playlist_modules pm ON pm.playlist_id = p.id
+  GROUP BY p.id
+  ORDER BY p.created_at DESC
+`);
+
+export function listPlaylists(): Playlist[] {
+  return listPlaylistsStmt.all() as Playlist[];
+}
+
+/** Creates a playlist if the name is new, otherwise returns the existing one's id. */
+export function createPlaylist(name: string): number {
+  const trimmed = name.trim();
+  insertPlaylist.run(trimmed);
+  return (getPlaylistByName.get(trimmed) as { id: number }).id;
+}
+
+export function deletePlaylist(playlistId: number) {
+  deletePlaylistModulesStmt.run(playlistId);
+  deletePlaylistStmt.run(playlistId);
+}
+
+const listPlaylistModulesStmt = db.prepare(`
+  SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
+  FROM playlist_modules pm
+  JOIN modules m ON m.id = pm.module_id
+  JOIN artists a ON a.id = m.artist_id
+  WHERE pm.playlist_id = ?
+  ORDER BY pm.added_at ASC
+`);
+
+export function listPlaylistModules(playlistId: number): ModuleRow[] {
+  return listPlaylistModulesStmt.all(playlistId) as ModuleRow[];
+}
+
+export function addToPlaylist(playlistId: number, moduleId: string) {
+  addPlaylistModuleStmt.run(playlistId, moduleId);
+}
+
+export function removeFromPlaylist(playlistId: number, moduleId: string) {
+  removePlaylistModuleStmt.run(playlistId, moduleId);
 }

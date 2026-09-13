@@ -19,8 +19,15 @@ import {
   toggleFavoriteArtist,
   isFavoriteGenre,
   toggleFavoriteGenre,
+  listPlaylists,
+  listPlaylistModules,
+  createPlaylist,
+  deletePlaylist,
+  addToPlaylist,
+  removeFromPlaylist,
   type Artist,
   type Genre,
+  type Playlist,
   type ModuleRow,
 } from "./queries";
 import { pm, batchConverter } from "./singleton";
@@ -41,6 +48,7 @@ type Section =
   | "favorite-artists"
   | "genres"
   | "favorite-genres"
+  | "playlists"
   | "search"
   | "favorites"
   | "all"
@@ -52,6 +60,7 @@ const SIDEBAR_ITEMS: { key: Section; label: string }[] = [
   { key: "favorite-artists", label: "Favorite Artists" },
   { key: "genres", label: "Genres" },
   { key: "favorite-genres", label: "Favorite Genres" },
+  { key: "playlists", label: "Playlists" },
   { key: "search", label: "Search" },
   { key: "favorites", label: "Favorite Mods" },
   { key: "all", label: "All Mods" },
@@ -69,9 +78,21 @@ interface GenresState {
   drill: { genreId: number; genreName: string; selected: number } | null;
 }
 
+interface PlaylistsState {
+  selected: number;
+  drill: { playlistId: number; playlistName: string; selected: number } | null;
+}
+
 interface SearchState {
   query: string;
   selected: number;
+}
+
+interface PlaylistPickerState {
+  moduleId: string;
+  selected: number;
+  creating: boolean;
+  newName: string;
 }
 
 type ContentContext =
@@ -81,6 +102,8 @@ type ContentContext =
   | { kind: "genres-list" }
   | { kind: "favorite-genres-list" }
   | { kind: "genres-modules"; genreId: number; genreName: string }
+  | { kind: "playlists-list" }
+  | { kind: "playlists-modules"; playlistId: number; playlistName: string }
   | { kind: "search" }
   | { kind: "favorites" }
   | { kind: "all" }
@@ -120,6 +143,13 @@ export function App() {
     selected: 0,
     drill: null,
   });
+  const [playlistsState, setPlaylistsState] = useState<PlaylistsState>({
+    selected: 0,
+    drill: null,
+  });
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [playlistPicker, setPlaylistPicker] = useState<PlaylistPickerState | null>(null);
   const [searchState, setSearchState] = useState<SearchState>({
     query: "",
     selected: 0,
@@ -132,6 +162,7 @@ export function App() {
 
   const [playState, setPlayState] = useState<PlaybackState>(pm.getState());
   const [favoritesVersion, setFavoritesVersion] = useState(0);
+  const [playlistsVersion, setPlaylistsVersion] = useState(0);
   const [batchState, setBatchState] = useState<BatchState>(batchConverter.getState());
 
   useEffect(() => {
@@ -193,11 +224,21 @@ export function App() {
       }
       return { kind: section === "genres" ? "genres-list" : "favorite-genres-list" };
     }
+    if (section === "playlists") {
+      if (playlistsState.drill) {
+        return {
+          kind: "playlists-modules",
+          playlistId: playlistsState.drill.playlistId,
+          playlistName: playlistsState.drill.playlistName,
+        };
+      }
+      return { kind: "playlists-list" };
+    }
     if (section === "search") return { kind: "search" };
     if (section === "favorites") return { kind: "favorites" };
     if (section === "downloaded") return { kind: "downloaded" };
     return { kind: "all" };
-  }, [section, artistsState.drill, genresState.drill]);
+  }, [section, artistsState.drill, genresState.drill, playlistsState.drill]);
 
   const downloadedList = useMemo(
     () => (ctx.kind === "downloaded" ? listDownloaded() : []),
@@ -208,7 +249,7 @@ export function App() {
     [downloadedList],
   );
 
-  const items = useMemo((): (Artist | Genre | ModuleRow)[] => {
+  const items = useMemo((): (Artist | Genre | Playlist | ModuleRow)[] => {
     const reorder = (list: ModuleRow[]) =>
       reorderByQueue(list, playState.queue, playState.shuffled);
     switch (ctx.kind) {
@@ -224,6 +265,10 @@ export function App() {
         return listFavoriteGenres();
       case "genres-modules":
         return reorder(listModulesForGenre(ctx.genreId));
+      case "playlists-list":
+        return listPlaylists();
+      case "playlists-modules":
+        return reorder(listPlaylistModules(ctx.playlistId));
       case "search":
         return reorder(searchState.query.trim() ? searchModules(searchState.query) : []);
       case "favorites":
@@ -238,6 +283,7 @@ export function App() {
     artistsState.query,
     searchState.query,
     favoritesVersion,
+    playlistsVersion,
     playState.queue,
     playState.shuffled,
     downloadedList,
@@ -253,6 +299,10 @@ export function App() {
         return genresState.selected;
       case "genres-modules":
         return genresState.drill?.selected ?? 0;
+      case "playlists-list":
+        return playlistsState.selected;
+      case "playlists-modules":
+        return playlistsState.drill?.selected ?? 0;
       case "search":
         return searchState.selected;
       case "favorites":
@@ -281,6 +331,12 @@ export function App() {
         return;
       case "genres-modules":
         setGenresState((s) => (s.drill ? { ...s, drill: { ...s.drill, selected: n } } : s));
+        return;
+      case "playlists-list":
+        setPlaylistsState((s) => ({ ...s, selected: n }));
+        return;
+      case "playlists-modules":
+        setPlaylistsState((s) => (s.drill ? { ...s, drill: { ...s.drill, selected: n } } : s));
         return;
       case "search":
         setSearchState((s) => ({ ...s, selected: n }));
@@ -356,6 +412,21 @@ export function App() {
         if (list[sel]) playList(list, sel);
         return;
       }
+      case "playlists-list": {
+        const playlist = (items as Playlist[])[sel];
+        if (playlist) {
+          setPlaylistsState((s) => ({
+            ...s,
+            drill: { playlistId: playlist.id, playlistName: playlist.name, selected: 0 },
+          }));
+        }
+        return;
+      }
+      case "playlists-modules": {
+        const list = items as ModuleRow[];
+        if (list[sel]) playList(list, sel);
+        return;
+      }
       case "search": {
         const list = items as ModuleRow[];
         if (list[sel]) playList(list, sel);
@@ -383,6 +454,7 @@ export function App() {
     if (
       ctx.kind === "artists-modules" ||
       ctx.kind === "genres-modules" ||
+      ctx.kind === "playlists-modules" ||
       ctx.kind === "search" ||
       ctx.kind === "favorites" ||
       ctx.kind === "all" ||
@@ -401,6 +473,10 @@ export function App() {
     }
     if (ctx.kind === "genres-modules") {
       setGenresState((s) => ({ ...s, drill: null }));
+      return;
+    }
+    if (ctx.kind === "playlists-modules") {
+      setPlaylistsState((s) => ({ ...s, drill: null }));
       return;
     }
     setFocus("sidebar");
@@ -432,6 +508,95 @@ export function App() {
   }
 
   useInput((input, key) => {
+    // Naming a new playlist and picking one from the add-to-playlist prompt
+    // both need to consume every keystroke themselves (letters, backspace,
+    // enter, escape) before any of the single-key shortcuts below get a
+    // chance to fire on them.
+    if (creatingPlaylist) {
+      if (key.escape) {
+        setCreatingPlaylist(false);
+        setNewPlaylistName("");
+        return;
+      }
+      if (key.return) {
+        const name = newPlaylistName.trim();
+        if (name) {
+          const id = createPlaylist(name);
+          setPlaylistsVersion((v) => v + 1);
+          setPlaylistsState({ selected: 0, drill: { playlistId: id, playlistName: name, selected: 0 } });
+        }
+        setCreatingPlaylist(false);
+        setNewPlaylistName("");
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setNewPlaylistName((s) => s.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setNewPlaylistName((s) => s + input);
+      }
+      return;
+    }
+
+    if (playlistPicker) {
+      if (playlistPicker.creating) {
+        if (key.escape) {
+          setPlaylistPicker((p) => (p ? { ...p, creating: false, newName: "" } : p));
+          return;
+        }
+        if (key.return) {
+          const name = playlistPicker.newName.trim();
+          if (name) {
+            const id = createPlaylist(name);
+            addToPlaylist(id, playlistPicker.moduleId);
+            setPlaylistsVersion((v) => v + 1);
+          }
+          setPlaylistPicker(null);
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setPlaylistPicker((p) => (p ? { ...p, newName: p.newName.slice(0, -1) } : p));
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setPlaylistPicker((p) => (p ? { ...p, newName: p.newName + input } : p));
+        }
+        return;
+      }
+
+      const options = listPlaylists();
+      const total = options.length + 1; // +1 for "+ New Playlist"
+      if (key.escape) {
+        setPlaylistPicker(null);
+        return;
+      }
+      if (key.upArrow) {
+        setPlaylistPicker((p) => (p ? { ...p, selected: Math.max(0, p.selected - 1) } : p));
+        return;
+      }
+      if (key.downArrow) {
+        setPlaylistPicker((p) =>
+          p ? { ...p, selected: Math.min(total - 1, p.selected + 1) } : p,
+        );
+        return;
+      }
+      if (key.return) {
+        if (playlistPicker.selected === 0) {
+          setPlaylistPicker((p) => (p ? { ...p, creating: true, newName: "" } : p));
+        } else {
+          const playlist = options[playlistPicker.selected - 1];
+          if (playlist) {
+            addToPlaylist(playlist.id, playlistPicker.moduleId);
+            setPlaylistsVersion((v) => v + 1);
+          }
+          setPlaylistPicker(null);
+        }
+        return;
+      }
+      return;
+    }
+
     // Playback controls live on plain keys rather than Ctrl-combos: terminal
     // hosts (VS Code's integrated terminal in particular) intercept
     // Ctrl+N/Ctrl+B/Ctrl+F/Ctrl+R as their own global shortcuts (new file,
@@ -450,6 +615,36 @@ export function App() {
     }
     if (input === "*") {
       toggleCurrentFavorite();
+      return;
+    }
+    if (input === "a" && !(focus === "content" && isTextCtx)) {
+      const mod = playState.module ?? getSelectedModule();
+      if (mod) {
+        setPlaylistPicker({ moduleId: mod.id, selected: 0, creating: false, newName: "" });
+      }
+      return;
+    }
+    if (input === "+" && ctx.kind === "playlists-list" && focus === "content") {
+      setCreatingPlaylist(true);
+      setNewPlaylistName("");
+      return;
+    }
+    if (input === "x" && ctx.kind === "playlists-list" && focus === "content") {
+      const playlist = (items as Playlist[])[getSelected()];
+      if (playlist) {
+        deletePlaylist(playlist.id);
+        setPlaylistsVersion((v) => v + 1);
+        setPlaylistsState((s) => ({ ...s, selected: Math.max(0, s.selected - 1) }));
+      }
+      return;
+    }
+    if (input === "x" && ctx.kind === "playlists-modules" && focus === "content") {
+      const list = items as ModuleRow[];
+      const mod = list[getSelected()];
+      if (mod) {
+        removeFromPlaylist(ctx.playlistId, mod.id);
+        setPlaylistsVersion((v) => v + 1);
+      }
       return;
     }
     if (input === "r" && !(focus === "content" && isTextCtx)) {
@@ -589,6 +784,17 @@ export function App() {
             </Text>
           </Text>
         );
+      case "playlists-list":
+        return <Text dimColor>Playlists</Text>;
+      case "playlists-modules":
+        return (
+          <Text>
+            <Text dimColor>Playlists › </Text>
+            <Text bold color="cyan">
+              {ctx.playlistName}
+            </Text>
+          </Text>
+        );
       case "search":
         return <Text dimColor>Search</Text>;
       case "favorites":
@@ -615,7 +821,9 @@ export function App() {
       ? ctx.artistName
       : ctx.kind === "genres-modules"
         ? ctx.genreName
-        : null;
+        : ctx.kind === "playlists-modules"
+          ? ctx.playlistName
+          : null;
 
   return (
     <Box flexDirection="column">
@@ -669,7 +877,51 @@ export function App() {
           borderColor={focus === "content" ? "cyan" : "gray"}
           paddingX={1}
         >
-          {isTextCtx && (
+          {playlistPicker && (
+            <Box flexDirection="column">
+              <Text bold color="cyan">
+                Add to playlist
+              </Text>
+              {playlistPicker.creating ? (
+                <Box marginTop={1}>
+                  <Text>
+                    New playlist name: {playlistPicker.newName}
+                    <Text color="cyan">_</Text>
+                  </Text>
+                </Box>
+              ) : (
+                <Box marginTop={1} flexDirection="column">
+                  <Text
+                    color={playlistPicker.selected === 0 ? "cyan" : undefined}
+                    bold={playlistPicker.selected === 0}
+                    inverse={playlistPicker.selected === 0}
+                  >
+                    {playlistPicker.selected === 0 ? "❯ " : "  "}+ New Playlist
+                  </Text>
+                  {listPlaylists().map((p, i) => (
+                    <Text
+                      key={p.id}
+                      color={playlistPicker.selected === i + 1 ? "cyan" : undefined}
+                      bold={playlistPicker.selected === i + 1}
+                      inverse={playlistPicker.selected === i + 1}
+                    >
+                      {playlistPicker.selected === i + 1 ? "❯ " : "  "}
+                      {p.name}
+                      <Text dimColor>
+                        {"  "}
+                        {p.module_count} tracks
+                      </Text>
+                    </Text>
+                  ))}
+                </Box>
+              )}
+              <Box marginTop={1}>
+                <Text dimColor>enter select · esc cancel</Text>
+              </Box>
+            </Box>
+          )}
+
+          {!playlistPicker && isTextCtx && (
             <Box marginBottom={1}>
               <Text>
                 Search: {getQuery()}
@@ -678,7 +930,7 @@ export function App() {
             </Box>
           )}
 
-          {(ctx.kind === "artists-list" || ctx.kind === "favorite-artists-list") && (
+          {!playlistPicker && (ctx.kind === "artists-list" || ctx.kind === "favorite-artists-list") && (
             <SelectableList
               items={items as Artist[]}
               selectedIndex={selectedIndex}
@@ -705,8 +957,10 @@ export function App() {
             />
           )}
 
-          {(ctx.kind === "artists-modules" ||
+          {!playlistPicker &&
+            (ctx.kind === "artists-modules" ||
             ctx.kind === "genres-modules" ||
+            ctx.kind === "playlists-modules" ||
             ctx.kind === "search" ||
             ctx.kind === "favorites" ||
             ctx.kind === "all" ||
@@ -721,7 +975,9 @@ export function App() {
                     ? "No favorite mods yet. Press * on a module to add one."
                     : ctx.kind === "downloaded"
                       ? "Nothing downloaded yet. Play or convert a module to cache it."
-                      : "No modules found."
+                      : ctx.kind === "playlists-modules"
+                        ? "No tracks yet. Press a on a module elsewhere to add it here."
+                        : "No modules found."
               }
               renderItem={(mod, isSelected) => {
                 const downloaded = isDownloaded(mod);
@@ -743,7 +999,8 @@ export function App() {
                     {(ctx.kind === "search" ||
                       ctx.kind === "favorites" ||
                       ctx.kind === "all" ||
-                      ctx.kind === "downloaded") && (
+                      ctx.kind === "downloaded" ||
+                      ctx.kind === "playlists-modules") && (
                       <Text dimColor> — {mod.artist_name}</Text>
                     )}
                   </Text>
@@ -752,7 +1009,34 @@ export function App() {
             />
           )}
 
-          {(ctx.kind === "genres-list" || ctx.kind === "favorite-genres-list") && (
+          {!playlistPicker && ctx.kind === "playlists-list" &&
+            (creatingPlaylist ? (
+              <Text>
+                New playlist name: {newPlaylistName}
+                <Text color="cyan">_</Text>
+              </Text>
+            ) : (
+              <SelectableList
+                items={items as Playlist[]}
+                selectedIndex={selectedIndex}
+                emptyLabel="No playlists yet. Press + to create one."
+                renderItem={(playlist, isSelected) => (
+                  <Text
+                    color={focus === "content" && isSelected ? "cyan" : undefined}
+                    bold={focus === "content" && isSelected}
+                  >
+                    {focus === "content" && isSelected ? "❯ " : "  "}
+                    {playlist.name}
+                    <Text dimColor>
+                      {"  "}
+                      {playlist.module_count} tracks
+                    </Text>
+                  </Text>
+                )}
+              />
+            ))}
+
+          {!playlistPicker && (ctx.kind === "genres-list" || ctx.kind === "favorite-genres-list") && (
             <SelectableList
               items={items as Genre[]}
               selectedIndex={selectedIndex}
@@ -799,11 +1083,11 @@ export function App() {
         <NowPlayingBar state={playState} />
         <Text dimColor>
           ←→ pane · ↑↓ move · enter select/play · esc back · space pause · b/n
-          prev/next · * favorite ·{" "}
+          prev/next · * favorite · a add to playlist ·{" "}
           <Text color={playState.shuffled ? "red" : undefined} dimColor={!playState.shuffled}>
             r shuffle
           </Text>{" "}
-          · \ stop · c convert artist/genre · ^q quit
+          · \ stop · c convert artist/genre · + new / x delete playlist · ^q quit
         </Text>
       </Box>
     </Box>

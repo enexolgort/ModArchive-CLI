@@ -51,6 +51,21 @@ db.exec(`
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (genre_id) REFERENCES genres(id)
   );
+
+  CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS playlist_modules (
+    playlist_id INTEGER NOT NULL,
+    module_id TEXT NOT NULL,
+    added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (playlist_id, module_id),
+    FOREIGN KEY (playlist_id) REFERENCES playlists(id),
+    FOREIGN KEY (module_id) REFERENCES modules(id)
+  );
 `);
 
 // Migrate existing DB: add columns if they don't exist yet
@@ -149,6 +164,30 @@ export const removeFavoriteGenre = db.prepare(`
 
 export const isFavoriteGenreStmt = db.prepare(`
   SELECT 1 FROM favorite_genres WHERE genre_id = ?
+`);
+
+export const insertPlaylist = db.prepare(`
+  INSERT OR IGNORE INTO playlists (name) VALUES (?)
+`);
+
+export const getPlaylistByName = db.prepare(`
+  SELECT id FROM playlists WHERE name = ?
+`);
+
+export const deletePlaylistStmt = db.prepare(`
+  DELETE FROM playlists WHERE id = ?
+`);
+
+export const deletePlaylistModulesStmt = db.prepare(`
+  DELETE FROM playlist_modules WHERE playlist_id = ?
+`);
+
+export const addPlaylistModuleStmt = db.prepare(`
+  INSERT OR IGNORE INTO playlist_modules (playlist_id, module_id) VALUES (?, ?)
+`);
+
+export const removePlaylistModuleStmt = db.prepare(`
+  DELETE FROM playlist_modules WHERE playlist_id = ? AND module_id = ?
 `);
 
 export { db };
