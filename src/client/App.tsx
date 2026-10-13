@@ -969,7 +969,7 @@ export function App() {
                   <Text dimColor>
                     {"  "}
                     {artist.module_count ?? 0} modules
-                    {artist.rating ? `, ★${artist.rating.toFixed(1)}` : ""}
+                    {artist.rating ? `, ★ ${artist.rating.toFixed(1)}` : ""}
                   </Text>
                 </Text>
               )}
