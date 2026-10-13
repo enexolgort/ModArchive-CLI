@@ -815,6 +815,24 @@ export function App() {
     return playState.module?.id === id && playState.phase !== "idle";
   }
 
+  // Color for the track that's currently loaded in the player, matching the
+  // phase colors NowPlayingBar already uses — so the active row reads the
+  // same way there as it does in whatever list it's sitting in.
+  function activeTrackColor(): string | undefined {
+    switch (playState.phase) {
+      case "playing":
+        return "green";
+      case "paused":
+        return "yellow";
+      case "downloading":
+        return "yellow";
+      case "converting":
+        return "cyan";
+      default:
+        return undefined;
+    }
+  }
+
   const selectedIndex = getSelected();
 
   const drilledName =
@@ -983,19 +1001,23 @@ export function App() {
               renderItem={(mod, isSelected) => {
                 const downloaded = isDownloaded(mod);
                 const genres = ctx.kind !== "genres-modules" ? listGenreNamesForModule(mod.id) : [];
+                const cursor = focus === "content" && isSelected;
+                const active = isPlaying(mod.id);
                 return (
                   <Text
                     color={
-                      focus === "content" && isSelected
+                      cursor
                         ? "cyan"
-                        : !downloaded
-                          ? "yellow"
-                          : undefined
+                        : active
+                          ? activeTrackColor()
+                          : !downloaded
+                            ? "yellow"
+                            : undefined
                     }
-                    bold={focus === "content" && isSelected}
+                    bold={cursor || active}
                   >
-                    {focus === "content" && isSelected ? "❯ " : "  "}
-                    {isPlaying(mod.id) ? "♪ " : "  "}
+                    {cursor ? "❯ " : "  "}
+                    {active ? "♪ " : "  "}
                     {isFavorite(mod.id) ? <Text color="yellow">★ </Text> : "  "}
                     {moduleLabel(mod)}
                     {(ctx.kind === "search" ||
