@@ -63,6 +63,16 @@ export function listArtists(search = ""): Artist[] {
   return listArtistsStmt.all(`%${search}%`) as Artist[];
 }
 
+const getArtistByIdStmt = db.prepare(`
+  SELECT id, name, module_count, rating, rating_count
+  FROM artists
+  WHERE id = ?
+`);
+
+export function getArtistById(artistId: string): Artist | null {
+  return (getArtistByIdStmt.get(artistId) as Artist | undefined) ?? null;
+}
+
 const listModulesForArtistStmt = db.prepare(`
   SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
   FROM modules m

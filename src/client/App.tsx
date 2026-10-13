@@ -28,6 +28,7 @@ import {
   addToPlaylist,
   removeFromPlaylist,
   movePlaylistModule,
+  getArtistById,
   type Artist,
   type Genre,
   type Playlist,
@@ -889,6 +890,14 @@ export function App() {
           ? ctx.playlistName
           : null;
 
+  // Artist rating/rating_count are scraped and already shown in the flat
+  // Artists list, but previously vanished once you drilled into an artist —
+  // surface them in the drilled-in header too.
+  const drilledArtist = useMemo(
+    () => (ctx.kind === "artists-modules" ? getArtistById(ctx.artistId) : null),
+    [ctx],
+  );
+
   return (
     <Box flexDirection="column">
       <Box justifyContent="space-between">
@@ -902,6 +911,12 @@ export function App() {
           {drilledName && (
             <Text bold color="cyan">
               {drilledName}
+              {drilledArtist?.rating ? (
+                <Text dimColor>
+                  {"  "}★ {drilledArtist.rating.toFixed(1)}
+                  {drilledArtist.rating_count ? ` (${drilledArtist.rating_count})` : ""}
+                </Text>
+              ) : null}
             </Text>
           )}
         </Box>
@@ -1014,7 +1029,9 @@ export function App() {
                   <Text dimColor>
                     {"  "}
                     {artist.module_count ?? 0} modules
-                    {artist.rating ? `, ★ ${artist.rating.toFixed(1)}` : ""}
+                    {artist.rating
+                      ? `, ★ ${artist.rating.toFixed(1)}${artist.rating_count ? ` (${artist.rating_count})` : ""}`
+                      : ""}
                   </Text>
                 </Text>
               )}
