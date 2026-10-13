@@ -11,7 +11,7 @@
     "scrap": "ts-node src/scraper-runner.ts",
     "scrap:artists": "ts-node src/scraper-runner.ts artists",
     "scrap:modules": "ts-node src/scraper-runner.ts modules",
-    "purge": "node -e \"const db = require('better-sqlite3')('scraper.db'); db.exec('DELETE FROM module_genres; DELETE FROM modules; DELETE FROM genres; DELETE FROM artists;'); console.log('Database purged.');\""
+    "purge": "node -e \"const db = require('better-sqlite3')('scraper.db'); db.exec('DELETE FROM module_genres; DELETE FROM favorites; DELETE FROM favorite_artists; DELETE FROM favorite_genres; DELETE FROM playlist_modules; DELETE FROM playlists; DELETE FROM modules; DELETE FROM genres; DELETE FROM artists;'); console.log('Database purged.');\""
   },
   "keywords": [],
   "author": "",

@@ -43,8 +43,16 @@ async function scrapModuleDetails() {
 async function main() {
   if (PURGE) {
     console.log("⚠️  Purging database...");
+    // Mirror the root `npm run purge` script: clear every table, not just the
+    // scraped catalog, so favorites/playlists don't end up pointing at
+    // artist/module/genre ids that no longer exist.
     db.exec(`
       DELETE FROM module_genres;
+      DELETE FROM favorites;
+      DELETE FROM favorite_artists;
+      DELETE FROM favorite_genres;
+      DELETE FROM playlist_modules;
+      DELETE FROM playlists;
       DELETE FROM modules;
       DELETE FROM genres;
       DELETE FROM artists;
