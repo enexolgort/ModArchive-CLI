@@ -15,9 +15,11 @@ import {
   insertPlaylist,
   getPlaylistByName,
   deletePlaylistStmt,
+  renamePlaylistStmt,
   deletePlaylistModulesStmt,
   addPlaylistModuleStmt,
   removePlaylistModuleStmt,
+  setPlaylistModulePositionStmt,
 } from "../db";
 import { getModulePaths } from "./paths";
 
@@ -367,13 +369,25 @@ export function deletePlaylist(playlistId: number) {
   deletePlaylistStmt.run(playlistId);
 }
 
+/** Renames a playlist; no-ops (returns false) on a blank name or a collision with another playlist's name. */
+export function renamePlaylist(playlistId: number, name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  try {
+    renamePlaylistStmt.run(trimmed, playlistId);
+    return true;
+  } catch {
+    return false; // UNIQUE constraint — another playlist already has this name.
+  }
+}
+
 const listPlaylistModulesStmt = db.prepare(`
   SELECT m.id, m.artist_id, a.name as artist_name, m.file_name, m.module_name, m.md5
   FROM playlist_modules pm
   JOIN modules m ON m.id = pm.module_id
   JOIN artists a ON a.id = m.artist_id
   WHERE pm.playlist_id = ?
-  ORDER BY pm.added_at ASC
+  ORDER BY pm.position ASC
 `);
 
 export function listPlaylistModules(playlistId: number): ModuleRow[] {
@@ -381,7 +395,27 @@ export function listPlaylistModules(playlistId: number): ModuleRow[] {
 }
 
 export function addToPlaylist(playlistId: number, moduleId: string) {
-  addPlaylistModuleStmt.run(playlistId, moduleId);
+  addPlaylistModuleStmt.run(playlistId, moduleId, playlistId);
+}
+
+/**
+ * Swaps a track with its neighbor above/below within the playlist, then
+ * renumbers the whole playlist to a dense 0..n-1 sequence — cheap for a
+ * user-curated list, and it sidesteps ever having to reconcile gaps/dupes
+ * left behind by earlier moves or removals.
+ */
+export function movePlaylistModule(playlistId: number, moduleId: string, direction: "up" | "down") {
+  const modules = listPlaylistModulesStmt.all(playlistId) as ModuleRow[];
+  const index = modules.findIndex((m) => m.id === moduleId);
+  if (index === -1) return;
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= modules.length) return;
+
+  [modules[index], modules[swapWith]] = [modules[swapWith], modules[index]];
+  const renumber = db.transaction((rows: ModuleRow[]) => {
+    rows.forEach((m, i) => setPlaylistModulePositionStmt.run(i, playlistId, m.id));
+  });
+  renumber(modules);
 }
 
 export function removeFromPlaylist(playlistId: number, moduleId: string) {

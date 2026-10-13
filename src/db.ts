@@ -62,6 +62,7 @@ db.exec(`
     playlist_id INTEGER NOT NULL,
     module_id TEXT NOT NULL,
     added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    position INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (playlist_id, module_id),
     FOREIGN KEY (playlist_id) REFERENCES playlists(id),
     FOREIGN KEY (module_id) REFERENCES modules(id)
@@ -82,6 +83,27 @@ for (const sql of migrations) {
   } catch {
     // Column already exists, ignore
   }
+}
+
+// playlist_modules didn't originally support manual reordering — it relied
+// entirely on insertion order (added_at). Backfill a dense `position` column
+// from that same order the first time this migration runs (the ALTER
+// throwing means it's already there, so skip re-backfilling); every reorder
+// from here on (movePlaylistModule in queries.ts) keeps it dense.
+try {
+  db.exec(`ALTER TABLE playlist_modules ADD COLUMN position INTEGER NOT NULL DEFAULT 0`);
+  db.exec(`
+    UPDATE playlist_modules
+    SET position = (
+      SELECT COUNT(*)
+      FROM playlist_modules AS earlier
+      WHERE earlier.playlist_id = playlist_modules.playlist_id
+        AND (earlier.added_at < playlist_modules.added_at
+             OR (earlier.added_at = playlist_modules.added_at AND earlier.rowid < playlist_modules.rowid))
+    )
+  `);
+} catch {
+  // Column already exists — already backfilled.
 }
 
 export const insertArtist = db.prepare(`
@@ -178,16 +200,28 @@ export const deletePlaylistStmt = db.prepare(`
   DELETE FROM playlists WHERE id = ?
 `);
 
+export const renamePlaylistStmt = db.prepare(`
+  UPDATE playlists SET name = ? WHERE id = ?
+`);
+
 export const deletePlaylistModulesStmt = db.prepare(`
   DELETE FROM playlist_modules WHERE playlist_id = ?
 `);
 
+// New tracks always land at the end of the playlist — position is one past
+// whatever the highest position in that playlist currently is (-1 + 1 = 0
+// for the first track).
 export const addPlaylistModuleStmt = db.prepare(`
-  INSERT OR IGNORE INTO playlist_modules (playlist_id, module_id) VALUES (?, ?)
+  INSERT OR IGNORE INTO playlist_modules (playlist_id, module_id, position)
+  VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_modules WHERE playlist_id = ?))
 `);
 
 export const removePlaylistModuleStmt = db.prepare(`
   DELETE FROM playlist_modules WHERE playlist_id = ? AND module_id = ?
+`);
+
+export const setPlaylistModulePositionStmt = db.prepare(`
+  UPDATE playlist_modules SET position = ? WHERE playlist_id = ? AND module_id = ?
 `);
 
 export { db };

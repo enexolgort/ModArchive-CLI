@@ -24,8 +24,10 @@ import {
   listPlaylistModules,
   createPlaylist,
   deletePlaylist,
+  renamePlaylist,
   addToPlaylist,
   removeFromPlaylist,
+  movePlaylistModule,
   type Artist,
   type Genre,
   type Playlist,
@@ -150,6 +152,9 @@ export function App() {
   });
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [renamingPlaylist, setRenamingPlaylist] = useState<{ playlistId: number; name: string } | null>(
+    null,
+  );
   const [playlistPicker, setPlaylistPicker] = useState<PlaylistPickerState | null>(null);
   const [searchState, setSearchState] = useState<SearchState>({
     query: "",
@@ -513,6 +518,28 @@ export function App() {
     // both need to consume every keystroke themselves (letters, backspace,
     // enter, escape) before any of the single-key shortcuts below get a
     // chance to fire on them.
+    if (renamingPlaylist) {
+      if (key.escape) {
+        setRenamingPlaylist(null);
+        return;
+      }
+      if (key.return) {
+        if (renamePlaylist(renamingPlaylist.playlistId, renamingPlaylist.name)) {
+          setPlaylistsVersion((v) => v + 1);
+        }
+        setRenamingPlaylist(null);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setRenamingPlaylist((p) => (p ? { ...p, name: p.name.slice(0, -1) } : p));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setRenamingPlaylist((p) => (p ? { ...p, name: p.name + input } : p));
+      }
+      return;
+    }
+
     if (creatingPlaylist) {
       if (key.escape) {
         setCreatingPlaylist(false);
@@ -639,12 +666,30 @@ export function App() {
       }
       return;
     }
+    if (input === "e" && ctx.kind === "playlists-list" && focus === "content") {
+      const playlist = (items as Playlist[])[getSelected()];
+      if (playlist) {
+        setRenamingPlaylist({ playlistId: playlist.id, name: playlist.name });
+      }
+      return;
+    }
     if (input === "x" && ctx.kind === "playlists-modules" && focus === "content") {
       const list = items as ModuleRow[];
       const mod = list[getSelected()];
       if (mod) {
         removeFromPlaylist(ctx.playlistId, mod.id);
         setPlaylistsVersion((v) => v + 1);
+      }
+      return;
+    }
+    if ((input === "[" || input === "]") && ctx.kind === "playlists-modules" && focus === "content") {
+      const list = items as ModuleRow[];
+      const mod = list[getSelected()];
+      if (mod) {
+        movePlaylistModule(ctx.playlistId, mod.id, input === "[" ? "up" : "down");
+        setPlaylistsVersion((v) => v + 1);
+        const delta = input === "[" ? -1 : 1;
+        setSelected(Math.max(0, Math.min(list.length - 1, getSelected() + delta)));
       }
       return;
     }
@@ -1040,6 +1085,11 @@ export function App() {
                 New playlist name: {newPlaylistName}
                 <Text color="cyan">_</Text>
               </Text>
+            ) : renamingPlaylist ? (
+              <Text>
+                Rename to: {renamingPlaylist.name}
+                <Text color="cyan">_</Text>
+              </Text>
             ) : (
               <SelectableList
                 items={items as Playlist[]}
@@ -1112,7 +1162,8 @@ export function App() {
           <Text color={playState.shuffled ? "red" : undefined} dimColor={!playState.shuffled}>
             r shuffle
           </Text>{" "}
-          · \ stop · c convert artist/genre · + new / x delete playlist · ^q quit
+          · \ stop · c convert artist/genre · + new / x delete / e rename playlist ·
+          [ ] reorder track · ^q quit
         </Text>
       </Box>
     </Box>
