@@ -7,6 +7,7 @@ import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3, probeDuration } from "./converter";
 import { Player } from "./player";
 import { CavaFeed } from "./cava-feed";
+import { Prefetcher } from "./prefetcher";
 
 export type PlaybackPhase =
   | "idle"
@@ -44,6 +45,7 @@ const initialState: PlaybackState = {
 export class PlaybackManager extends EventEmitter {
   private player = new Player();
   private cavaFeed = new CavaFeed();
+  private prefetcher = new Prefetcher();
   private state: PlaybackState = { ...initialState };
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
   private queue: ModuleRow[] = [];
@@ -119,6 +121,7 @@ export class PlaybackManager extends EventEmitter {
     this.player.play(audioPath);
     this.cavaFeed.start(audioPath);
     this.startElapsedTimer();
+    this.schedulePrefetchNext();
   }
 
   private resumeSegment(audioPath: string, fromSeconds: number, token: number) {
@@ -129,6 +132,20 @@ export class PlaybackManager extends EventEmitter {
     this.player.play(audioPath, fromSeconds);
     this.cavaFeed.start(audioPath, fromSeconds);
     this.startElapsedTimer();
+    this.schedulePrefetchNext();
+  }
+
+  /**
+   * Points the background prefetcher at whatever's next in the queue, so its
+   * download/convert happens while the current track plays instead of
+   * showing up as a pause once that track ends. Called once a track actually
+   * starts playing (not while it's still downloading/converting itself) so
+   * the two don't contend for bandwidth, and again whenever the queue order
+   * changes underneath the currently playing track (shuffle).
+   */
+  private schedulePrefetchNext() {
+    const next = this.queueIndex >= 0 ? this.queue[this.queueIndex + 1] : undefined;
+    this.prefetcher.ensure(next ?? null);
   }
 
   getState(): PlaybackState {
@@ -159,6 +176,7 @@ export class PlaybackManager extends EventEmitter {
     } else {
       this.player.stop();
       this.cavaFeed.stop();
+      this.prefetcher.cancel();
       this.setState({ ...initialState });
     }
   }
@@ -196,6 +214,7 @@ export class PlaybackManager extends EventEmitter {
     this.queue = current ? [current, ...rest] : rest;
     this.queueIndex = current ? 0 : this.queueIndex;
     this.setState({ queue: this.queue, shuffled: true });
+    this.schedulePrefetchNext();
   }
 
   async playModule(mod: ModuleRow) {
@@ -206,6 +225,10 @@ export class PlaybackManager extends EventEmitter {
     this.abortController?.abort();
     const controller = new AbortController();
     this.abortController = controller;
+    // If a background prefetch is already mid-flight for this exact module
+    // (the user jumped straight to a track that was being prefetched ahead
+    // of time), hand off to our own download below instead of racing it.
+    this.prefetcher.cancelFor(mod.id);
 
     this.dropRetryCount = 0;
     this.segmentBaseOffset = 0;
@@ -292,6 +315,7 @@ export class PlaybackManager extends EventEmitter {
     this.abortController?.abort();
     this.player.stop();
     this.cavaFeed.stop();
+    this.prefetcher.cancel();
     this.stopElapsedTimer();
     this.setState({ ...initialState });
   }
