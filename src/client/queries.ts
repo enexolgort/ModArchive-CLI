@@ -227,6 +227,13 @@ export function markDownloaded(moduleId: string) {
   setModuleDownloaded.run(1, moduleId);
 }
 
+export interface ReconcileProgress {
+  done: number;
+  total: number;
+}
+
+const RECONCILE_BATCH_SIZE = 500;
+
 /**
  * Reconciles the `downloaded` flag against what's actually on disk — the
  * files are the source of truth, so this corrects the DB to match them
@@ -234,10 +241,16 @@ export function markDownloaded(moduleId: string) {
  * outside the app, or a DB reset/restore that lost track of what's already
  * cached. Meant to run once at startup rather than on every render, since it
  * walks the whole catalog.
+ *
+ * Processes the catalog in batches via setImmediate rather than one giant
+ * synchronous pass, so a caller can report progress (e.g. a startup loading
+ * screen) and the event loop stays free between batches instead of freezing
+ * the terminal for the whole scan.
  */
-export function reconcileDownloaded() {
+export function reconcileDownloaded(onProgress?: (progress: ReconcileProgress) => void): Promise<void> {
   const all = listModulesForDownloadScanStmt.all() as (ModuleRow & { downloaded: number })[];
-  const apply = db.transaction((rows: (ModuleRow & { downloaded: number })[]) => {
+  const total = all.length;
+  const applyBatch = db.transaction((rows: (ModuleRow & { downloaded: number })[]) => {
     for (const row of rows) {
       const actuallyDownloaded = fs.existsSync(getModulePaths(row).audioPath);
       if (actuallyDownloaded !== !!row.downloaded) {
@@ -245,7 +258,25 @@ export function reconcileDownloaded() {
       }
     }
   });
-  apply(all);
+
+  return new Promise((resolve) => {
+    let index = 0;
+    onProgress?.({ done: 0, total });
+
+    function step() {
+      const batch = all.slice(index, index + RECONCILE_BATCH_SIZE);
+      if (batch.length === 0) {
+        resolve();
+        return;
+      }
+      applyBatch(batch);
+      index += batch.length;
+      onProgress?.({ done: index, total });
+      setImmediate(step);
+    }
+
+    step();
+  });
 }
 
 /** Every module already marked downloaded, with its file size on disk. */
