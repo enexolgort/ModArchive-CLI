@@ -112,11 +112,11 @@ In any module list, the currently loaded track is marked with `♪` and colored 
 Pressing Enter on a module:
 
 1. Downloads the original file from ModArchive if it isn't already cached
-2. Converts it to MP3 via `ffmpeg` (tracker formats — `.mod`/`.xm`/`.it`/`.s3m`/etc. — are decoded through ffmpeg's `libopenmpt` support)
+2. Converts it to MP3 via `ffmpeg` (tracker formats — `.mod`/`.xm`/`.it`/`.s3m`/etc. — are decoded through ffmpeg's `libopenmpt` support), stamping the artist, title, and genre from the catalog on as proper ID3 tags
 3. Deletes the original download, keeping only the MP3
 4. Plays it and auto-advances to the next module in the current list when it ends
 
-Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`.
+Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`, tagged so the artist/title/genre survive even if you copy an mp3 out and play it somewhere else.
 
 Once a track starts playing, the player also pre-fetches (downloads + converts) whatever's next in the queue in the background, so the download/convert pause you'd otherwise hit on every track change only happens on the very first track.
 
