@@ -1073,7 +1073,7 @@ export function App() {
                         : active
                           ? activeTrackColor()
                           : !downloaded
-                            ? "yellow"
+                            ? "gray"
                             : undefined
                     }
                     bold={cursor || active}
