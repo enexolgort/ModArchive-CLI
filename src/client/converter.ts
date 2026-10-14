@@ -3,9 +3,16 @@ import * as fs from "fs";
 import * as crypto from "crypto";
 import { AbortedError } from "./downloader";
 
+export interface Mp3Metadata {
+  artist?: string;
+  title?: string;
+  genre?: string;
+}
+
 export function convertToMp3(
   srcPath: string,
   destPath: string,
+  metadata?: Mp3Metadata,
   onProgress?: (seconds: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -22,6 +29,17 @@ export function convertToMp3(
     // under it, right before its rename — surfacing as an ENOENT rename
     // crash on the "successful" one.
     const tmpPath = `${destPath}.${process.pid}-${crypto.randomUUID()}.part.mp3`;
+
+    // Explicit ID3 tags from the catalog, so these survive as plain mp3s
+    // outside this app — otherwise the only metadata that lands in the file
+    // is whatever ffmpeg/libopenmpt auto-carries over from the tracker file's
+    // own internal header (its song title, sometimes a sample-name dump as
+    // "comment"), which has no artist or genre at all.
+    const metadataArgs: string[] = [];
+    if (metadata?.artist) metadataArgs.push("-metadata", `artist=${metadata.artist}`);
+    if (metadata?.title) metadataArgs.push("-metadata", `title=${metadata.title}`);
+    if (metadata?.genre) metadataArgs.push("-metadata", `genre=${metadata.genre}`);
+
     const proc = spawn("ffmpeg", [
       "-y",
       "-i",
@@ -31,6 +49,7 @@ export function convertToMp3(
       "libmp3lame",
       "-qscale:a",
       "2",
+      ...metadataArgs,
       tmpPath,
     ]);
     let settled = false;

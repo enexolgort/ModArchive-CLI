@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
-import { markDownloaded } from "./queries";
+import { markDownloaded, getMp3Metadata } from "./queries";
 import { getModulePaths } from "./paths";
 import { downloadModule } from "./downloader";
 import { convertToMp3 } from "./converter";
@@ -56,7 +56,7 @@ export class Prefetcher {
       if (!fs.existsSync(rawPath)) {
         await downloadModule(mod.id, rawPath, undefined, controller.signal);
       }
-      await convertToMp3(rawPath, audioPath, undefined, controller.signal);
+      await convertToMp3(rawPath, audioPath, getMp3Metadata(mod), undefined, controller.signal);
       fs.rm(rawPath, { force: true }, () => {});
       markDownloaded(mod.id);
     } catch {

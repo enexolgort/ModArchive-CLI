@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
-import { markDownloaded } from "./queries";
+import { markDownloaded, getMp3Metadata } from "./queries";
 import { getModulePaths } from "./paths";
 import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3, probeDuration } from "./converter";
@@ -269,6 +269,7 @@ export class PlaybackManager extends EventEmitter {
         await convertToMp3(
           rawPath,
           audioPath,
+          getMp3Metadata(mod),
           (seconds) => {
             if (token !== this.playToken) return;
             this.setState({ convertElapsed: seconds });

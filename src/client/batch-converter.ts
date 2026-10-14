@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
-import { markDownloaded } from "./queries";
+import { markDownloaded, getMp3Metadata } from "./queries";
 import { getModulePaths } from "./paths";
 import { downloadModule, AbortedError } from "./downloader";
 import { convertToMp3 } from "./converter";
@@ -77,7 +77,7 @@ export class BatchConverter extends EventEmitter {
           if (token !== this.runToken) return;
 
           this.setState({ phase: "converting" });
-          await convertToMp3(rawPath, audioPath, undefined, controller.signal);
+          await convertToMp3(rawPath, audioPath, getMp3Metadata(mod), undefined, controller.signal);
           fs.rm(rawPath, { force: true }, () => {});
         }
         markDownloaded(mod.id);

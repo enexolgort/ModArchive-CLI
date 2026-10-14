@@ -1,4 +1,6 @@
 import * as fs from "fs";
+import * as path from "path";
+import type { Mp3Metadata } from "./converter";
 import {
   db,
   addFavorite,
@@ -145,6 +147,21 @@ const listGenreNamesForModuleStmt = db.prepare(`
 
 export function listGenreNamesForModule(moduleId: string): string[] {
   return (listGenreNamesForModuleStmt.all(moduleId) as { name: string }[]).map((r) => r.name);
+}
+
+/**
+ * The ID3 tags to stamp onto a module's converted mp3. Title prefers the
+ * catalog's cleaned-up module_name over the raw file_name (stripped of its
+ * tracker extension) — the latter is often all a module has, since not
+ * every module got a name back from ModArchive.
+ */
+export function getMp3Metadata(mod: ModuleRow): Mp3Metadata {
+  const genres = listGenreNamesForModule(mod.id);
+  return {
+    artist: mod.artist_name,
+    title: mod.module_name?.trim() || path.parse(mod.file_name).name,
+    genre: genres.length > 0 ? genres.join(", ") : undefined,
+  };
 }
 
 const listFavoritesStmt = db.prepare(`
