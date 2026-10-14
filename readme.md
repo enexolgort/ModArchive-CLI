@@ -1,6 +1,6 @@
 # ModArchive CLI
 
-A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) catalog into a local SQLite database — artists, modules, genres, ratings, and more — plus a terminal UI (built with [Ink](https://github.com/vadimdemedes/ink)) for browsing that catalog and playing modules, Spotify-style, right from the terminal.
+A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) catalog into a local SQLite database — artists, modules, genres, ratings, and more — plus a terminal UI (built with [Ink](https://github.com/vadimdemedes/ink)) for browsing that catalog and playing modules, Spotify-style, right from the terminal. A second terminal view turns the same database into a stats dashboard, and an optional `cava` visualizer can be hooked up to whatever's currently playing.
 
 > **Testing status:** so far this has only actually been run and verified under WSL. Plain Linux, native Windows, and macOS are expected to work (see the platform notes below) but haven't been tested — treat them as unverified until confirmed.
 
@@ -10,21 +10,9 @@ A TypeScript scraper that indexes the full [ModArchive](http://modarchive.org) c
 
 - Node.js 18+
 - npm
-- [ffmpeg](https://ffmpeg.org/) on `PATH` (needs `libopenmpt` support for tracker formats — most distro packages include it) — used to convert downloaded modules to MP3 and, outside WSL, to play them back
+- [ffmpeg](https://ffmpeg.org/) + `ffprobe` on `PATH` (needs `libopenmpt` support for tracker formats — most distro packages include it) — used to convert downloaded modules to MP3, probe track duration, and, outside WSL, to play them back
 - A working internet connection
-
-> **On Windows, this project must be run from inside WSL**, not from a Windows shell.
-> `npm run client`/`npm run ui` invoke `tsx`, a Linux binary installed into this project's
-> `node_modules` — it only exists inside the WSL filesystem. Open a real WSL terminal (`wsl`
-> from cmd/PowerShell, or a WSL/Ubuntu profile in Windows Terminal) and `cd` into the project
-> using its Linux path (e.g. `/home/<you>/projects/ModArchive-CLI`), then run npm commands from
-> there. Running `npm run ...` from PowerShell after `cd`-ing into the project's `\\wsl.localhost\...`
-> UNC path does **not** work: npm scripts execute via `cmd.exe`, which can't use a UNC path as its
-> working directory and silently falls back to a Windows default directory where `tsx` isn't on `PATH`.
-> The only piece of this project that intentionally crosses into Windows is actual audio
-> playback (`src/client/win-player.ps1`, invoked via WSL/Windows interop) — everything else,
-> including running the app itself and `npm run cava` (see below), is a WSL/Linux program. `cava`
-> itself has no Windows build at all, so there's no way to run it outside WSL either way.
+- Optional: [`cava`](https://github.com/karlstav/cava) on `PATH` for the audio visualizer (`npm run cava`, see below). Linux/WSL only — there's no Windows build.
 
 ---
 
@@ -40,7 +28,7 @@ npm install
 
 The scraper writes to `scraper.db` in the project root. The file is created automatically on first run.
 
-> **Note:** `scraper.db` is checked into this repo, so cloning it also clones whatever catalog, favorites, and playlists happen to be in it at the time (the maintainer's own, currently). If you want a clean slate instead, delete `scraper.db` before running anything, then repopulate the catalog from scratch with `npm run scrap` (see [Scripts](#scripts) below — this re-crawls the full ModArchive roster, so it takes a while).
+> **Note:** `scraper.db` is checked into this repo, so cloning it also clones whatever catalog, favorites, and playlists happen to be in it at the time (the maintainer's own, currently). If you want a clean slate instead, delete `scraper.db` before running anything, then repopulate the catalog from scratch with `npm run scrap` (see [Scripts](#scripts) below — this re-crawls the full ModArchive roster, so it takes a while). Alternatively, `npm run purge` clears every table in place without deleting the file.
 
 ### Schema
 
@@ -57,7 +45,9 @@ modules
 ├── artist_id      TEXT  → artists.id
 ├── file_name      TEXT
 ├── module_name    TEXT
-└── md5            TEXT
+├── md5            TEXT
+└── downloaded     INTEGER  (0/1 — whether the mp3 is cached on disk; reconciled against the
+                              filesystem at startup, see "Startup reconciliation" below)
 
 genres
 ├── id             INTEGER
@@ -78,6 +68,17 @@ favorite_artists     (artists starred in the client)
 favorite_genres      (genres starred in the client)
 ├── genre_id       INTEGER → genres.id
 └── added_at       TEXT  (timestamp)
+
+playlists            (user-created playlists)
+├── id             INTEGER
+├── name           TEXT  (unique)
+└── created_at     TEXT  (timestamp)
+
+playlist_modules      (N-to-N join table, playlist contents)
+├── playlist_id    INTEGER → playlists.id
+├── module_id      TEXT     → modules.id
+├── added_at       TEXT    (timestamp)
+└── position       INTEGER  (manual ordering within the playlist — see "Playlists" below)
 ```
 
 ---
@@ -90,15 +91,21 @@ A terminal player for browsing and listening to the modules indexed above. Run i
 npm run client
 ```
 
+On startup it reconciles the `downloaded` flag against what's actually on disk (see below), showing a splash screen with a progress bar while that full-catalog scan runs — this can take a few seconds on a large catalog.
+
 ### Sections
 
-- **Artists** — browse/search all indexed artists, drill into an artist to see their modules
+- **Artists** — browse/search all indexed artists, drill into an artist (showing their rating) to see their modules
 - **Favorite Artists** — artists you've starred; drilling in works exactly like the main Artists page
 - **Genres** — browse genres (with module counts), drill into a genre to see its modules
 - **Favorite Genres** — genres you've starred; drilling in works exactly like the main Genres page
+- **Playlists** — your own named playlists; drill into one to see/reorder/play its tracks
 - **Search** — full-text search across module and file names
 - **Favorite Mods** — modules you've starred
 - **All Mods** — every module in the catalog, in a fresh random order each time you open the page
+- **Downloaded** — every module already cached as an mp3, with per-item and total size on disk
+
+In any module list, the currently loaded track is marked with `♪` and colored by what it's doing (green while playing, yellow while paused or downloading, cyan while converting); undownloaded tracks are shown in yellow.
 
 ### How playback works
 
@@ -109,7 +116,22 @@ Pressing Enter on a module:
 3. Deletes the original download, keeping only the MP3
 4. Plays it and auto-advances to the next module in the current list when it ends
 
-Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`. In any module list, entries that haven't been downloaded/converted yet are shown in yellow.
+Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`.
+
+Once a track starts playing, the player also pre-fetches (downloads + converts) whatever's next in the queue in the background, so the download/convert pause you'd otherwise hit on every track change only happens on the very first track.
+
+### Startup reconciliation
+
+The files on disk under `./modules/` are the source of truth for what's actually downloaded. On launch (and before the stats dashboard, too), the app walks the whole catalog and corrects the `downloaded` DB flag to match reality — covering files removed by hand outside the app, or a DB reset/restore that lost track of what was already cached. This is the scan shown behind the startup splash screen.
+
+### Playlists
+
+From any module list, `a` opens an "add to playlist" picker (with an option to create a new one inline). From the Playlists section itself:
+
+- `+` creates a new playlist, `x` deletes the selected one
+- `e` renames the selected playlist
+- Drill into a playlist and `x` removes the selected track from it
+- `[` / `]` move the selected track up/down within the playlist
 
 ### Batch converting a whole artist or genre
 
@@ -121,25 +143,60 @@ While browsing a specific artist's or genre's module list, press `c` to download
 |-----|--------|
 | `←` `→` | Switch focus between sidebar and content pane |
 | `↑` `↓` | Move selection |
-| `Enter` | Open (artist/genre) or play (module) |
-| `Esc` | Back out of an artist/genre's module list |
+| `Enter` | Open (artist/genre/playlist) or play (module) |
+| `Esc` | Back out of a drilled-in module list |
 | `Space` | Pause / resume |
 | `b` / `n` | Previous / next track |
 | `*` | Toggle favorite — the selected artist/genre while browsing those lists, otherwise the playing (or selected) module |
+| `a` | Add the playing (or selected) module to a playlist |
 | `r` | Toggle shuffle (press again to restore original order) |
 | `\` | Stop |
 | `c` | Convert a whole artist/genre's modules (see above) |
+| `+` / `x` | New / delete playlist (from the Playlists list) |
+| `e` | Rename the selected playlist (from the Playlists list) |
+| `x` | Remove the selected track from a playlist (while drilled into one) |
+| `[` / `]` | Move the selected track up/down within a playlist |
 | `q` | Quit |
 
-Letter shortcuts (`b`, `n`, `r`, `q`) are disabled while typing in a search/filter box so they type normally instead — use `Ctrl+Q` (or `Ctrl+C`) to quit from there.
+Letter shortcuts (`b`, `n`, `r`, `a`, `q`) are disabled while typing in a search/filter/name-entry box so they type normally instead; `Ctrl+N`/`Ctrl+B`/`Ctrl+F`/`Ctrl+P`/`Ctrl+X` work as fallbacks for next/previous/favorite/pause/stop everywhere (plain keys are preferred since some terminal hosts intercept those Ctrl combos as their own shortcuts), and `Ctrl+Q`/`Ctrl+C` always quit, including from a text box.
 
 ### Audio backend
 
 Playback always goes through `ffmpeg`, but *how* differs by environment:
 
-- **WSL**: audio is played by a native Windows process (`src/client/win-player.ps1`, driven via `powershell.exe` over the WSL/Windows interop bridge), so it goes through Windows' own audio stack instead of WSLg's PulseAudio bridge — the latter was found to progressively lose throughput on long streams and eventually drop the connection, regardless of audio format.
+- **WSL**: audio is played by a native Windows process (`src/client/win-player.ps1`, driven via `powershell.exe` over the WSL/Windows interop bridge), so it goes through Windows' own audio stack instead of WSLg's PulseAudio bridge — the latter was found to progressively lose throughput on long streams and eventually drop the connection, regardless of audio format. A dropped stream is detected (actual playtime falls short of the probed duration) and automatically resumed from where it left off, up to 3 times, before surfacing an error.
 - **Linux with PulseAudio** (`$PULSE_SERVER` set, non-WSL): plays via `ffmpeg -f pulse`.
 - **Everything else**: plays via `ffplay`.
+
+Pause/resume uses `SIGSTOP`/`SIGCONT` where the platform supports it; the WSL-interop backend and native Windows (neither has a POSIX stop/continue signal, nor a live control channel over the interop bridge) instead kill and relaunch playback from the paused position.
+
+---
+
+## Stats Dashboard
+
+A read-only view of your library: which artists and genres you've actually downloaded and/or favorited, ranked side by side.
+
+```bash
+npm run stats
+```
+
+- Two panels, **By Artist** and **By Genre**, each row showing downloaded count (⬇), favorite count (★), and a relative bar; top 3 ranks get a medal
+- `←` `→` / `Tab` switch which panel is focused, `↑` `↓` scrolls it
+- `s` toggles the sort key between downloaded count and favorite count
+- Header summarizes total downloaded count + size, total favorited count, and how many distinct artists/genres are represented
+- `q` / `Ctrl+C` quits
+
+---
+
+## Audio Visualizer
+
+```bash
+npm run cava
+```
+
+Runs [`cava`](https://github.com/karlstav/cava) (must be installed separately and on `PATH`) configured via `cava-modarchive.config` to read from a named FIFO at `/tmp/modarchive-cava.fifo`. While the client is playing something, it independently decodes the same file to PCM and feeds that FIFO in real time, so run this in a second terminal alongside `npm run client` to get a live spectrum display of whatever's currently playing. Linux/WSL only — there's no Windows build of `cava`, and this bypasses WSLg's PulseAudio bridge entirely the same way normal playback does.
+
+Since it's a second, independent decode of the file rather than tapping the actual playback stream, it can drift slightly out of sync with real playback over a very long track.
 
 ---
 
@@ -205,13 +262,13 @@ Use this after `scrap:artists` to fill in the full metadata for all discovered m
 
 ### `npm run purge`
 
-Wipes all data from the database. The schema (tables) is preserved.
+Wipes every table — the scraped catalog (`artists`/`modules`/`genres`/`module_genres`) as well as your favorites and playlists (`favorites`/`favorite_artists`/`favorite_genres`/`playlists`/`playlist_modules`). The schema itself is preserved; only the rows are deleted.
 
 ```bash
 npm run purge
 ```
 
-> ⚠️ This is irreversible. All scraped data will be deleted.
+> ⚠️ This is irreversible. All scraped data, favorites, and playlists will be deleted.
 
 ---
 
@@ -231,12 +288,12 @@ You can stop the scraper at any time with `Ctrl+C` and rerun — it will pick up
 
 The scraper includes built-in protections to avoid overwhelming the server:
 
-- **1500ms delay** between each request
+- **500ms delay** between each request
 - **Automatic retry** on connection errors (`ECONNRESET`, `ETIMEDOUT`, `ECONNREFUSED`)
   - Up to 3 retries per request
   - 5 second wait before each retry
 
-If a request fails after all retries, the error is thrown and the scraper stops. Simply rerun the command to resume.
+If a request fails after all retries, the error is thrown and the scraper stops. Simply rerun the command to resume. (The client's own module downloads retry the same way when playing or batch-converting.)
 
 ---
 
@@ -276,6 +333,15 @@ SELECT name, module_count,
   (SELECT COUNT(*) FROM modules WHERE artist_id = artists.id) as db_count
 FROM artists
 WHERE module_count > (SELECT COUNT(*) FROM modules WHERE artist_id = artists.id);
+
+-- A playlist's contents, in the order they'll play
+SELECT p.name as playlist, m.module_name, a.name as artist
+FROM playlist_modules pm
+JOIN playlists p ON p.id = pm.playlist_id
+JOIN modules m ON m.id = pm.module_id
+JOIN artists a ON a.id = m.artist_id
+WHERE p.name = 'My Playlist'
+ORDER BY pm.position;
 ```
 
 ---
