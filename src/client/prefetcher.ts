@@ -1,3 +1,4 @@
+import { EventEmitter } from "events";
 import * as fs from "fs";
 import type { ModuleRow } from "./queries";
 import { markDownloaded, getMp3Metadata } from "./queries";
@@ -20,7 +21,8 @@ import { convertToMp3 } from "./converter";
  * filenames mean the race is wasteful, not unsafe. cancelFor() below avoids
  * it in the common case by handing off instead.
  */
-export class Prefetcher {
+/** Emits "change" with the id of the module currently being prefetched, or null when nothing is. */
+export class Prefetcher extends EventEmitter {
   private abortController: AbortController | null = null;
   private moduleId: string | null = null;
 
@@ -33,6 +35,7 @@ export class Prefetcher {
     if (fs.existsSync(audioPath)) return;
 
     this.moduleId = mod.id;
+    this.emit("change", this.moduleId);
     const controller = new AbortController();
     this.abortController = controller;
     void this.run(mod, controller);
@@ -46,7 +49,10 @@ export class Prefetcher {
   cancel() {
     this.abortController?.abort();
     this.abortController = null;
-    this.moduleId = null;
+    if (this.moduleId !== null) {
+      this.moduleId = null;
+      this.emit("change", null);
+    }
   }
 
   private async run(mod: ModuleRow, controller: AbortController) {
@@ -67,6 +73,7 @@ export class Prefetcher {
       if (this.abortController === controller) {
         this.abortController = null;
         this.moduleId = null;
+        this.emit("change", null);
       }
     }
   }

@@ -1065,6 +1065,7 @@ export function App() {
                 const genres = ctx.kind !== "genres-modules" ? listGenreNamesForModule(mod.id) : [];
                 const cursor = focus === "content" && isSelected;
                 const active = isPlaying(mod.id);
+                const prefetching = playState.prefetchingId === mod.id;
                 return (
                   <Text
                     color={
@@ -1082,6 +1083,7 @@ export function App() {
                     {active ? "♪ " : "  "}
                     {isFavorite(mod.id) ? <Text color="yellow">★ </Text> : "  "}
                     {moduleLabel(mod)}
+                    {prefetching && <Text color="cyan"> ↓</Text>}
                     {(ctx.kind === "search" ||
                       ctx.kind === "favorites" ||
                       ctx.kind === "all" ||

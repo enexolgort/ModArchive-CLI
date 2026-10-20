@@ -28,6 +28,7 @@ export interface PlaybackState {
   error?: string;
   queue: ModuleRow[];
   shuffled: boolean;
+  prefetchingId: string | null;
 }
 
 const initialState: PlaybackState = {
@@ -40,6 +41,7 @@ const initialState: PlaybackState = {
   duration: null,
   queue: [],
   shuffled: false,
+  prefetchingId: null,
 };
 
 export class PlaybackManager extends EventEmitter {
@@ -61,6 +63,9 @@ export class PlaybackManager extends EventEmitter {
 
   constructor() {
     super();
+    this.prefetcher.on("change", (prefetchingId: string | null) => {
+      this.setState({ prefetchingId });
+    });
     this.player.on("end", () => {
       const token = this.playToken;
       this.stopElapsedTimer();
