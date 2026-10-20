@@ -105,7 +105,7 @@ On startup it reconciles the `downloaded` flag against what's actually on disk (
 - **All Mods** — every module in the catalog, in a fresh random order each time you open the page
 - **Downloaded** — every module already cached as an mp3, with per-item and total size on disk
 
-In any module list, the currently loaded track is marked with `♪` and colored by what it's doing (green while playing, yellow while paused or downloading, cyan while converting); undownloaded tracks are shown in yellow.
+In any module list, the currently loaded track is marked with `♪` and colored by what it's doing (green while playing, yellow while paused or downloading, cyan while converting); undownloaded tracks are shown in gray, and whatever's being pre-fetched in the background for next is marked with `↓`.
 
 ### How playback works
 
@@ -118,7 +118,7 @@ Pressing Enter on a module:
 
 Downloaded/converted files live under `./modules/<artist name>/<module name>.mp3`, tagged so the artist/title/genre survive even if you copy an mp3 out and play it somewhere else.
 
-Once a track starts playing, the player also pre-fetches (downloads + converts) whatever's next in the queue in the background, so the download/convert pause you'd otherwise hit on every track change only happens on the very first track.
+Once a track starts playing, the player also pre-fetches (downloads + converts) whatever's next in the queue in the background, so the download/convert pause you'd otherwise hit on every track change only happens on the very first track — that track is marked with `↓` wherever it appears in a list while this is happening.
 
 ### Startup reconciliation
 
