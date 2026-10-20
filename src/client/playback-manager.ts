@@ -162,7 +162,18 @@ export class PlaybackManager extends EventEmitter {
     this.emit("change", this.state);
   }
 
+  /**
+   * When `list` is just the already-playing queue (e.g. the UI's shuffled
+   * display order, which App.tsx reorders to match this.queue exactly) the
+   * caller is jumping to a different track within it, not starting a new
+   * one — leave queue/originalQueue/shuffled alone so picking a track while
+   * shuffled doesn't silently unshuffle or clobber the pre-shuffle order.
+   */
   setQueue(list: ModuleRow[], startIndex: number) {
+    const sameAsCurrent =
+      this.queue.length === list.length && this.queue.every((m, i) => m.id === list[i].id);
+    if (sameAsCurrent) return;
+
     this.queue = list;
     this.originalQueue = list;
     this.queueIndex = startIndex;
